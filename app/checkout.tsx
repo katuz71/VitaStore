@@ -1,23 +1,23 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  ActivityIndicator,
-  Alert,
-  Modal,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Linking,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { useCart } from './context/CartContext';
-import { useOrders, OrderItem } from './context/OrdersContext';
+import { OrderItem, useOrders } from './context/OrdersContext';
 
 // Используем фиксированный IP адрес
 const getApiBase = () => {
@@ -42,6 +42,8 @@ export default function CheckoutScreen() {
   const { items, totalPrice, clearCart } = useCart();
   const { addOrder } = useOrders();
   const [successVisible, setSuccessVisible] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+  const [currentOrderId, setCurrentOrderId] = useState<number | null>(null);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -307,6 +309,30 @@ export default function CheckoutScreen() {
     setShowWarehouseDropdown(false);
   };
 
+  const checkPaymentStatus = async () => {
+    if (!currentOrderId) return;
+    
+    try {
+      const response = await fetch(`${API_BASE}/order_status/${currentOrderId}`);
+      const data = await response.json();
+      
+      if (data.status === 'Paid') {
+        // Заказ оплачен - переходим на успех
+        setIsPending(false);
+        setCurrentOrderId(null);
+        clearCart();
+        setSuccessVisible(true);
+      } else if (data.status === 'New') {
+        Alert.alert('Очікування оплати', 'Деньги ще не зайшли. Спробуйте через 10 секунд.');
+      } else if (data.error) {
+        Alert.alert('Помилка', 'Не вдалося перевірити статус замовлення');
+      }
+    } catch (error) {
+      console.error('Error checking payment status:', error);
+      Alert.alert('Помилка', 'Не вдалося перевірити статус оплати');
+    }
+  };
+
   const handleConfirmOrder = async () => {
     // Валидация
     if (!name.trim()) {
@@ -354,34 +380,76 @@ export default function CheckoutScreen() {
         body: JSON.stringify(orderData),
       });
 
-      const responseData = await response.json();
+      // Parse JSON response
+      const data = await response.json();
 
-      if (response.ok && (responseData.success || responseData.status === 'success')) {
-        // Если есть checkout_url (онлайн оплата), открываем его
-        if (responseData.checkout_url) {
-          try {
-            await Linking.openURL(responseData.checkout_url);
-            // Показываем сообщение о переходе на оплату
-            Alert.alert(
-              'Перехід на оплату',
-              'Ви будете перенаправлені на сторінку оплати. Після успішної оплати замовлення буде підтверджено.',
-              [{ text: 'OK' }]
-            );
-          } catch (error) {
-            console.error('Error opening checkout URL:', error);
-            Alert.alert('Помилка', 'Не вдалося відкрити посилання для оплати');
+      // Check if there's an error in the response
+      if (data.error) {
+        const errorMessage = data.error || 'Не вдалося оформити замовлення';
+        console.error('Order creation error:', data);
+        Alert.alert('Помилка', errorMessage);
+        setSubmitting(false);
+        return;
+      }
+
+      // 1. IF payment_url exists - redirect to payment (Card payment)
+      if (data.payment_url) {
+        try {
+          // Получаем order_id из ответа сервера
+          const orderId = data.order_id ? (typeof data.order_id === 'string' ? parseInt(data.order_id) : data.order_id) : null;
+          
+          if (!orderId) {
+            Alert.alert('Помилка', 'Не вдалося отримати ID замовлення');
+            setSubmitting(false);
+            return;
           }
-        } else if (paymentMethod === 'card') {
-          // Если выбран онлайн платеж, но нет checkout_url - показываем ошибку
-          Alert.alert(
-            'Помилка оплати',
-            'Не вдалося отримати посилання для оплати. Будь ласка, спробуйте ще раз або оберіть інший спосіб оплати.',
-            [{ text: 'OK' }]
-          );
+          
+          // Создаем заказ для истории перед переходом на оплату
+          const orderItems: OrderItem[] = items.map(item => ({
+            id: item.id,
+            name: item.name,
+            price: item.price,
+            image: item.image,
+            quantity: item.quantity,
+            packSize: item.packSize,
+          }));
+
+          const newOrder = {
+            id: orderId.toString() || Date.now().toString(),
+            date: new Date().toLocaleDateString('uk-UA'),
+            items: orderItems,
+            total: totalPrice,
+            city: selectedCity.Description,
+            warehouse: selectedWarehouse.Description,
+            phone: phone,
+            name: name,
+          };
+
+          // Добавляем заказ в историю
+          addOrder(newOrder);
+          
+          // Устанавливаем состояние ожидания оплаты
+          setIsPending(true);
+          setCurrentOrderId(orderId);
+          
+          // Открываем URL оплаты
+          await Linking.openURL(data.payment_url);
+          
+          // НЕ показываем Alert, просто возвращаемся
           setSubmitting(false);
           return;
+        } catch (error) {
+          console.error('Error opening payment URL:', error);
+          Alert.alert('Помилка', 'Не вдалося відкрити посилання для оплати');
+          setSubmitting(false);
+          setIsPending(false);
+          setCurrentOrderId(null);
+          return;
         }
+      }
 
+      // 2. ELSE IF status === 'created' (Cash on Delivery success) или успешный ответ без payment_url
+      if (data.status === 'created' || data.status === 'success' || (response.ok && !data.payment_url && !data.error)) {
         // Создаем заказ для истории
         const orderItems: OrderItem[] = items.map(item => ({
           id: item.id,
@@ -393,7 +461,7 @@ export default function CheckoutScreen() {
         }));
 
         const newOrder = {
-          id: responseData.order_id?.toString() || Date.now().toString(),
+          id: data.order_id?.toString() || Date.now().toString(),
           date: new Date().toLocaleDateString('uk-UA'),
           items: orderItems,
           total: totalPrice,
@@ -409,16 +477,20 @@ export default function CheckoutScreen() {
         // Очищаем корзину
         clearCart();
         
-        // Показываем модальное окно успеха только если нет checkout_url
-        // (если есть checkout_url, пользователь уже на странице оплаты)
-        if (!responseData.checkout_url) {
+        // Показываем красивое модальное окно успеха с кнопкой "Чудово"
+        setSubmitting(false);
+        // Небольшая задержка для плавного показа модального окна
+        setTimeout(() => {
           setSuccessVisible(true);
-        }
-      } else {
-        const errorMessage = responseData.error || 'Не вдалося оформити замовлення';
-        console.error('Order creation error:', responseData);
-        Alert.alert('Помилка', errorMessage);
+        }, 100);
+        return;
       }
+
+      // 3. ELSE (Error)
+      const errorMessage = data.error || 'Не вдалося оформити замовлення';
+      console.error('Order creation error:', data);
+      Alert.alert('Помилка', errorMessage);
+      setSubmitting(false);
     } catch (error: any) {
       console.error('Error creating order:', error);
       const errorMessage = error.message || 'Не вдалося підключитися до сервера';
@@ -668,19 +740,28 @@ export default function CheckoutScreen() {
         </ScrollView>
         </View>
 
-        {/* Confirm Button */}
+        {/* Confirm Button or Check Status Button */}
         <View style={styles.footer}>
-          <TouchableOpacity
-            style={[styles.confirmButton, submitting && styles.confirmButtonDisabled]}
-            onPress={handleConfirmOrder}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={styles.confirmButtonText}>Підтвердити замовлення</Text>
-            )}
-        </TouchableOpacity>
+          {isPending ? (
+            <TouchableOpacity
+              style={styles.confirmButton}
+              onPress={checkPaymentStatus}
+            >
+              <Text style={styles.confirmButtonText}>🔄 Я оплатив / Перевірити статус</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.confirmButton, submitting && styles.confirmButtonDisabled]}
+              onPress={handleConfirmOrder}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text style={styles.confirmButtonText}>Підтвердити замовлення</Text>
+              )}
+            </TouchableOpacity>
+          )}
       </View>
       
       {/* SUCCESS ORDER MODAL */}
@@ -700,7 +781,10 @@ export default function CheckoutScreen() {
               onPress={() => {
                 setSuccessVisible(false);
                 // Переходим на главный экран и открываем профиль с историей заказов
-                router.push('/(tabs)/?showProfile=true');
+                router.replace({
+                  pathname: '/(tabs)/',
+                  params: { showProfile: 'true' }
+                } as any);
               }}
               style={styles.successModalButton}
             >
@@ -1001,4 +1085,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-

@@ -35,6 +35,14 @@ export default function Index() {
   // Products data array
   const products: Product[] = [
     {
+      id: 0,
+      name: 'Тестовый товар (1 грн)',
+      price: 1,
+      description: 'Спец. товар для проверки оплат',
+      image: 'https://placehold.co/400?text=Test+1+UAH',
+      category: 'Вітаміни',
+    },
+    {
       id: 1,
       name: 'Омега-3 Gold',
       price: 1200,

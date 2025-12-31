@@ -18,13 +18,7 @@ import {
 } from 'react-native';
 import { useCart } from './context/CartContext';
 import { OrderItem, useOrders } from './context/OrdersContext';
-
-// Используем фиксированный IP адрес
-const getApiBase = () => {
-  return 'http://192.168.1.161:8000';
-};
-
-const API_BASE = getApiBase();
+import { API_URL } from './config/api';
 
 interface City {
   Ref: string;
@@ -80,12 +74,12 @@ export default function CheckoutScreen() {
     return description.includes(searchLower) || number.includes(searchLower);
   });
 
-  // Загрузка городов при вводе
+  // Загрузка городов при вводе (минимум 2 символа)
   useEffect(() => {
     if (citySearch.length >= 2) {
       const timeoutId = setTimeout(() => {
         fetchCities(citySearch);
-      }, 300);
+      }, 400); // Увеличил задержку до 400ms для уменьшения количества запросов
       return () => clearTimeout(timeoutId);
     } else {
       setCities([]);
@@ -99,7 +93,7 @@ export default function CheckoutScreen() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 секунд для проверки
       
-      const response = await fetch(`${API_BASE}/health`, {
+      const response = await fetch(`${API_URL}/health`, {
         method: 'GET',
         signal: controller.signal,
       });
@@ -126,10 +120,10 @@ export default function CheckoutScreen() {
         throw new Error('Server is not available');
       }
       
-      const url = `${API_BASE}/get_cities?search=${encodeURIComponent(search)}`;
+      const url = `${API_URL}/get_cities?search=${encodeURIComponent(search)}`;
       console.log('Fetching cities from:', url);
       console.log('Platform:', Platform.OS);
-      console.log('API_BASE:', API_BASE);
+      console.log('API_URL:', API_URL);
       
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 секунд timeout
@@ -155,16 +149,30 @@ export default function CheckoutScreen() {
       }
       
       const data = await response.json();
-      console.log('Cities response:', data);
+      console.log('Cities response RAW:', JSON.stringify(data));
+      console.log('Cities response type:', typeof data);
+      console.log('Is array:', Array.isArray(data));
+      console.log('Has success:', data && data.success);
+      console.log('Has data:', data && data.data);
       
-      if (data && data.success && data.data && Array.isArray(data.data)) {
-        setCities(data.data);
-        setShowCityDropdown(true);
+      // Handle both formats: {success: true, data: [...]} or direct array
+      let citiesList: City[] = [];
+      if (data && Array.isArray(data)) {
+        // Direct array format (backward compatibility)
+        console.log('Treating as direct array, length:', data.length);
+        citiesList = data;
+      } else if (data && typeof data === 'object' && data.success !== undefined && data.data && Array.isArray(data.data)) {
+        // Object with success and data
+        console.log('Treating as object with success/data, data.length:', data.data.length);
+        citiesList = data.data;
       } else {
-        console.warn('Invalid response format:', data);
-        setCities([]);
-        setShowCityDropdown(false);
+        console.warn('Invalid response format:', JSON.stringify(data));
+        citiesList = [];
       }
+      
+      console.log('Parsed cities list:', citiesList.length, 'cities');
+      setCities(citiesList);
+      setShowCityDropdown(citiesList.length > 0);
     } catch (error: any) {
       console.error('Error fetching cities:', error);
       if (error.name === 'AbortError') {
@@ -177,7 +185,7 @@ export default function CheckoutScreen() {
         console.error('Network error - check if server is running and accessible');
         Alert.alert(
           'Помилка підключення',
-          `Не вдалося підключитися до сервера.\n\nПеревірте:\n1. Сервер запущений на ${API_BASE}\n2. Пристрій і комп'ютер в одній мережі\n3. Фаєрвол не блокує з'єднання`
+          `Не вдалося підключитися до сервера.\n\nПеревірте:\n1. Сервер запущений на ${API_URL}\n2. Пристрій і комп'ютер в одній мережі\n3. Фаєрвол не блокує з'єднання`
         );
       }
       setCities([]);
@@ -210,7 +218,7 @@ export default function CheckoutScreen() {
     
     setLoadingWarehouses(true);
     try {
-      const url = `${API_BASE}/get_warehouses?city_ref=${encodeURIComponent(cityRef)}`;
+      const url = `${API_URL}/get_warehouses`;
       console.log('Fetching warehouses from:', url);
       console.log('CityRef:', cityRef);
       
@@ -219,11 +227,12 @@ export default function CheckoutScreen() {
       
       const startTime = Date.now();
       const response = await fetch(url, {
-        method: 'GET',
+        method: 'POST',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({ cityRef: cityRef }),
         signal: controller.signal,
       });
       const endTime = Date.now();
@@ -240,8 +249,19 @@ export default function CheckoutScreen() {
       const data = await response.json();
       console.log('Warehouses response:', JSON.stringify(data, null, 2));
       
-      // Проверяем различные форматы ответа
-      if (data && data.success === true && data.data && Array.isArray(data.data)) {
+      // Backend возвращает массив напрямую
+      if (Array.isArray(data)) {
+        if (data.length > 0) {
+          setWarehouses(data);
+          setShowWarehouseDropdown(true);
+        } else {
+          console.warn('No warehouses found');
+          setWarehouses([]);
+          setShowWarehouseDropdown(false);
+          Alert.alert('Інформація', 'Не знайдено відділень для вибраного міста');
+        }
+      } else if (data && data.success === true && data.data && Array.isArray(data.data)) {
+        // Fallback для формата с success/data
         if (data.data.length > 0) {
           setWarehouses(data.data);
           setShowWarehouseDropdown(true);
@@ -273,11 +293,11 @@ export default function CheckoutScreen() {
       let errorMessage = 'Невідома помилка';
       
       if (error.message === 'Server is not available') {
-        errorMessage = `Сервер недоступен. Перевірте, що сервер запущений на ${API_BASE}`;
+        errorMessage = `Сервер недоступен. Перевірте, що сервер запущений на ${API_URL}`;
       } else if (error.name === 'AbortError') {
         errorMessage = 'Таймаут запиту. Сервер не відповідає протягом 20 секунд. Спробуйте пізніше.';
       } else if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
-        errorMessage = `Помилка підключення до сервера.\n\nПеревірте:\n1. Сервер запущений на ${API_BASE}\n2. Пристрій і комп'ютер в одній мережі\n3. Фаєрвол не блокує з'єднання`;
+        errorMessage = `Помилка підключення до сервера.\n\nПеревірте:\n1. Сервер запущений на ${API_URL}\n2. Пристрій і комп'ютер в одній мережі\n3. Фаєрвол не блокує з'єднання`;
       } else if (error.message) {
         errorMessage = `Помилка: ${error.message}`;
       }
@@ -313,7 +333,7 @@ export default function CheckoutScreen() {
     if (!currentOrderId) return;
     
     try {
-      const response = await fetch(`${API_BASE}/order_status/${currentOrderId}`);
+      const response = await fetch(`${API_URL}/order_status/${currentOrderId}`);
       const data = await response.json();
       
       if (data.status === 'Paid') {
@@ -367,12 +387,13 @@ export default function CheckoutScreen() {
           price: item.price,
           quantity: item.quantity,
           packSize: item.packSize,
+          unit: item.unit || item.packSize || 'шт',
         })),
         totalPrice,
         payment_method: paymentMethod,
       };
 
-      const response = await fetch(`${API_BASE}/create_order`, {
+      const response = await fetch(`${API_URL}/create_order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -412,6 +433,7 @@ export default function CheckoutScreen() {
             image: item.image,
             quantity: item.quantity,
             packSize: item.packSize,
+            unit: item.unit || item.packSize || 'шт',
           }));
 
           const newOrder = {
@@ -458,6 +480,7 @@ export default function CheckoutScreen() {
           image: item.image,
           quantity: item.quantity,
           packSize: item.packSize,
+          unit: item.unit || item.packSize || 'шт',
         }));
 
         const newOrder = {
@@ -551,7 +574,7 @@ export default function CheckoutScreen() {
               <View style={styles.autocompleteContainer}>
                 <TextInput
                   style={styles.input}
-                  placeholder="Введіть назву міста"
+                  placeholder="Введіть назву міста (мін. 2 символи)"
                   value={citySearch}
                   onChangeText={(text) => {
                     setCitySearch(text);
@@ -562,8 +585,8 @@ export default function CheckoutScreen() {
                     }
                   }}
                   onFocus={() => {
-                    // Показываем dropdown только если город не выбран
-                    if (!selectedCity && cities.length > 0) {
+                    // Показываем dropdown если есть города
+                    if (cities.length > 0) {
                       setShowCityDropdown(true);
                     }
                   }}
@@ -645,8 +668,8 @@ export default function CheckoutScreen() {
                           activeOpacity={0.7}
                         >
                           <Text style={styles.dropdownText} numberOfLines={2}>
-                            {item.Description}
-                            {item.Number && ` (№${item.Number})`}
+                            <Text>{item.Description}</Text>
+                            {item.Number ? <Text> (№{item.Number})</Text> : null}
                           </Text>
                         </TouchableOpacity>
                       ))}
@@ -724,16 +747,23 @@ export default function CheckoutScreen() {
               {items.map((item) => (
                 <View key={`${item.id}-${item.packSize}`} style={styles.summaryItem}>
                   <Text style={styles.summaryText}>
-                    {item.name} ({item.packSize} шт) x {item.quantity}
+                    <Text>{item.name} </Text>
+                    <Text>({item.unit || item.packSize || 'шт'}) </Text>
+                    <Text>x </Text>
+                    <Text>{item.quantity}</Text>
                   </Text>
                   <Text style={styles.summaryPrice}>
-                    {item.price * item.quantity} ₴
+                    <Text>{item.price * item.quantity} </Text>
+                    <Text>₴</Text>
                   </Text>
                 </View>
               ))}
               <View style={styles.totalRow}>
                 <Text style={styles.totalText}>Всього:</Text>
-                <Text style={styles.totalPrice}>{totalPrice} ₴</Text>
+                <Text style={styles.totalPrice}>
+                  <Text>{totalPrice} </Text>
+                  <Text>₴</Text>
+                </Text>
               </View>
             </View>
           </View>

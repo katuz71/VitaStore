@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal-backdrop { background-color: rgba(0, 0, 0, 0.75); }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans min-h-screen p-6">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header with Tabs -->
+        <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+            <h1 class="text-3xl font-bold text-blue-400">🍕 Super Admin</h1>
+            <div class="space-x-4">
+                <button onclick="switchTab('orders')" id="tab-orders" class="px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold transition hover:bg-blue-500">
+                    📦 Заказы
+                </button>
+                <button onclick="switchTab('products')" id="tab-products" class="px-4 py-2 rounded-lg bg-gray-700 text-gray-300 font-semibold transition hover:bg-gray-600">
+                    🍔 Товары
+                </button>
+            </div>
+        </div>
+
+        <!-- ORDERS TAB -->
+        <div id="view-orders" class="fade-in">
+            <div class="bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-700 text-gray-300 uppercase text-xs tracking-wider">
+                            <th class="p-4">ID</th>
+                            <th class="p-4">Дата</th>
+                            <th class="p-4">Клиент</th>
+                            <th class="p-4">Доставка</th>
+                            <th class="p-4 w-1/3">Состав Заказа</th>
+                            <th class="p-4">Сумма</th>
+                            <th class="p-4">Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-table" class="divide-y divide-gray-700 text-sm">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- PRODUCTS TAB -->
+        <div id="view-products" class="hidden fade-in">
+            <!-- XML Import Section -->
+            <div class="bg-gray-800 rounded-lg p-4 mb-6 border border-gray-700">
+                <h3 class="text-lg font-semibold mb-3 text-blue-400">📥 Импорт XML</h3>
+                <div class="flex gap-3">
+                    <input type="text" id="xml-url-input" placeholder="Введите URL XML файла..." 
+                           class="flex-1 px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                    <button onclick="importXML()" 
+                            class="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-500 transition">
+                        Импорт
+                    </button>
+                </div>
+            </div>
+
+            <!-- Add Product Button -->
+            <div class="mb-4">
+                <button onclick="openAddProductModal()" 
+                        class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition">
+                    ➕ Добавить товар
+                </button>
+            </div>
+
+            <!-- Products Table -->
+            <div class="bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-700">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-700 text-gray-300 uppercase text-xs tracking-wider">
+                            <th class="p-3">Фото</th>
+                            <th class="p-3">Название</th>
+                            <th class="p-3">Категория</th>
+                            <th class="p-3">Цена</th>
+                            <th class="p-3">Старая цена</th>
+                            <th class="p-3">Единица</th>
+                            <th class="p-3">Фасування</th>
+                            <th class="p-3">Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="products-table" class="divide-y divide-gray-700 text-sm">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Order Status Modal -->
+    <div id="order-status-modal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center">
+        <div class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-md mx-4 border border-gray-700 fade-in">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-blue-400">Изменить статус заказа</h2>
+                    <button onclick="closeOrderStatusModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Статус заказа</label>
+                        <select id="order-status-select" 
+                                class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                            <option value="Новый">Новый</option>
+                            <option value="В обработке">В обработке</option>
+                            <option value="Отправлен">Отправлен</option>
+                            <option value="Доставлен">Доставлен</option>
+                            <option value="Отменен">Отменен</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex justify-end gap-3 pt-4">
+                        <button onclick="closeOrderStatusModal()" 
+                                class="px-6 py-2 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-600 transition">
+                            Отмена
+                        </button>
+                        <button onclick="saveOrderStatus()" 
+                                class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition">
+                            Сохранить
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Modal -->
+    <div id="product-modal" class="hidden fixed inset-0 z-50 modal-backdrop flex items-center justify-center">
+        <div class="bg-gray-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 border border-gray-700 fade-in max-h-[85vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 id="modal-title" class="text-2xl font-bold text-blue-400">Добавить товар</h2>
+                    <button onclick="closeProductModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                
+                <form id="product-form" onsubmit="saveProduct(event)" class="space-y-4">
+                    <input type="hidden" id="product-id" value="">
+                    
+                    <!-- Top Row: Name, Price, Category -->
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Название *</label>
+                            <input type="text" id="product-name" required
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Цена (₴) *</label>
+                            <input type="number" id="product-price" required min="0"
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Категория</label>
+                            <input type="text" id="product-category"
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                    </div>
+                    
+                    <!-- Second Row: Old Price, Discount, Unit -->
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Старая цена (₴)</label>
+                            <input type="number" id="product-old-price" min="0" step="0.01"
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Скидка (%)</label>
+                            <input type="number" id="product-discount" placeholder="Скидка %" min="0" max="100" step="0.01"
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Единица измерения</label>
+                            <input type="text" id="product-unit" placeholder="шт" value="шт"
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                    </div>
+                    
+                    <!-- Third Row: Image URL, Pack Sizes -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">URL изображения</label>
+                            <input type="url" id="product-image"
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-300 mb-2">Фасування (через кому)</label>
+                            <input type="text" id="product-pack-sizes" placeholder="30, 60, 90"
+                                   class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500">
+                        </div>
+                    </div>
+                    
+                    <!-- Text Areas (Large) -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Опис</label>
+                        <textarea id="product-description" rows="2"
+                                  class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Склад</label>
+                        <textarea id="product-composition" rows="2"
+                                  class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300 mb-2">Прийом</label>
+                        <textarea id="product-usage" rows="2"
+                                  class="w-full px-4 py-2 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:border-blue-500"></textarea>
+                    </div>
+                    
+                    <div class="flex justify-end gap-3 pt-4">
+                        <button type="button" onclick="closeProductModal()" 
+                                class="px-6 py-2 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-600 transition">
+                            Отмена
+                        </button>
+                        <button type="submit" 
+                                class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition">
+                            Сохранить
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentEditingId = null;
+        let currentOrderId = null;
+
+        // --- TABS LOGIC ---
+        function switchTab(tab) {
+            if (tab === 'orders') {
+                document.getElementById('view-orders').classList.remove('hidden');
+                document.getElementById('view-products').classList.add('hidden');
+                document.getElementById('tab-orders').classList.replace('bg-gray-700', 'bg-blue-600');
+                document.getElementById('tab-orders').classList.replace('text-gray-300', 'text-white');
+                document.getElementById('tab-products').classList.replace('bg-blue-600', 'bg-gray-700');
+                document.getElementById('tab-products').classList.replace('text-white', 'text-gray-300');
+            } else {
+                document.getElementById('view-orders').classList.add('hidden');
+                document.getElementById('view-products').classList.remove('hidden');
+                document.getElementById('tab-products').classList.replace('bg-gray-700', 'bg-blue-600');
+                document.getElementById('tab-products').classList.replace('text-gray-300', 'text-white');
+                document.getElementById('tab-orders').classList.replace('bg-blue-600', 'bg-gray-700');
+                document.getElementById('tab-orders').classList.replace('text-white', 'text-gray-300');
+                loadProducts();
+            }
+        }
+
+        // --- FETCH ORDERS ---
+        async function loadOrders() {
+            try {
+                const response = await fetch('/api/orders');
+                const orders = await response.json();
+                const tbody = document.getElementById('orders-table');
+                tbody.innerHTML = '';
+
+                orders.forEach(order => {
+                    let itemsDisplay = '<span class="text-gray-500">-</span>';
+                    try {
+                        if (order.items) {
+                            const items = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                            if (Array.isArray(items) && items.length > 0) {
+                                itemsDisplay = items.map(item => {
+                                    const name = item.name || 'Товар';
+                                    const unit = item.unit || item.packSize || 'шт';
+                                    const qty = item.quantity || 1;
+                                    return `${name} (${unit}) x ${qty}`;
+                                }).join(', ');
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing items:', e);
+                        itemsDisplay = '<span class="text-gray-500">-</span>';
+                    }
+                    
+                    // Get status with fallback
+                    const orderStatus = order.status || 'Новый';
+                    const statusColors = {
+                        'Новый': 'bg-green-900 text-green-300',
+                        'В обработке': 'bg-yellow-900 text-yellow-300',
+                        'Отправлен': 'bg-blue-900 text-blue-300',
+                        'Доставлен': 'bg-purple-900 text-purple-300',
+                        'Отменен': 'bg-red-900 text-red-300'
+                    };
+                    const statusClass = statusColors[orderStatus] || 'bg-gray-900 text-gray-300';
+                    
+                    // Escape single quotes in status for JavaScript
+                    const escapedStatus = (orderStatus || 'Новый').replace(/'/g, "\\'");
+                    const row = `
+                        <tr class="hover:bg-gray-750 transition cursor-pointer" onclick="openOrderStatusModal(${order.id}, '${escapedStatus}')">
+                            <td class="p-4 font-mono text-blue-300">#${order.id}</td>
+                            <td class="p-4 text-gray-400">${order.date || ''}</td>
+                            <td class="p-4">
+                                <div class="font-bold text-white">${order.user_name || order.name || ''}</div>
+                                <div class="text-xs text-gray-400">${order.phone || ''}</div>
+                            </td>
+                            <td class="p-4 text-gray-300 text-xs">
+                                ${order.city || ''}<br>${order.warehouse || ''}
+                            </td>
+                            <td class="p-4 text-gray-300 text-xs italic border-l border-gray-700">
+                                ${itemsDisplay}
+                            </td>
+                            <td class="p-4 font-bold text-green-400 text-lg">
+                                ${order.total_price || order.total || 0} ₴
+                            </td>
+                            <td class="p-4">
+                                <span class="px-2 py-1 ${statusClass} rounded text-xs">${orderStatus}</span>
+                            </td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+            } catch (e) { 
+                console.error("Err orders", e);
+                document.getElementById('orders-table').innerHTML = 
+                    '<tr><td colspan="7" class="p-4 text-center text-red-400">Ошибка загрузки заказов</td></tr>';
+            }
+        }
+
+        // --- FETCH PRODUCTS ---
+        async function loadProducts() {
+            try {
+                const response = await fetch('/products');
+                const products = await response.json();
+                const tbody = document.getElementById('products-table');
+                tbody.innerHTML = '';
+
+                if (products.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="p-4 text-center text-gray-400">Нет товаров</td></tr>';
+                    return;
+                }
+
+                products.forEach(p => {
+                    const row = `
+                        <tr class="hover:bg-gray-750 transition">
+                            <td class="p-3">
+                                <img src="${p.image || 'https://via.placeholder.com/50'}" 
+                                     alt="${p.name}" 
+                                     class="w-12 h-12 object-cover rounded">
+                            </td>
+                            <td class="p-3 font-semibold text-white">${p.name || '-'}</td>
+                            <td class="p-3 text-gray-300">${p.category || '-'}</td>
+                            <td class="p-3 text-green-400 font-bold">${p.price || 0} ₴</td>
+                            <td class="p-3 text-gray-400 line-through">${p.old_price ? p.old_price + ' ₴' : '-'}</td>
+                            <td class="p-3 text-gray-300">${p.unit || 'шт'}</td>
+                            <td class="p-3 text-gray-300">${p.pack_sizes || '-'}</td>
+                            <td class="p-3">
+                                <div class="flex gap-2">
+                                    <button onclick="openEditProductModal(${p.id})" 
+                                            class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-500 transition">
+                                        ✏️
+                                    </button>
+                                    <button onclick="deleteProduct(${p.id})" 
+                                            class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-500 transition">
+                                        🗑️
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+            } catch (e) { 
+                console.error("Err products", e);
+                document.getElementById('products-table').innerHTML = 
+                    '<tr><td colspan="8" class="p-4 text-center text-red-400">Ошибка загрузки товаров</td></tr>';
+            }
+        }
+
+        // --- PRODUCT MODAL ---
+        function openAddProductModal() {
+            currentEditingId = null;
+            document.getElementById('modal-title').textContent = 'Добавить товар';
+            document.getElementById('product-id').value = '';
+            document.getElementById('product-form').reset();
+            document.getElementById('product-modal').classList.remove('hidden');
+        }
+
+        async function openEditProductModal(id) {
+            try {
+                const response = await fetch('/products');
+                const products = await response.json();
+                const product = products.find(p => p.id === id);
+                
+                if (!product) {
+                    alert('Товар не найден');
+                    return;
+                }
+                
+                currentEditingId = id;
+                document.getElementById('modal-title').textContent = 'Редактировать товар';
+                document.getElementById('product-id').value = id;
+                document.getElementById('product-name').value = product.name || '';
+                document.getElementById('product-price').value = product.price || '';
+                document.getElementById('product-category').value = product.category || '';
+                document.getElementById('product-image').value = product.image || '';
+                // Handle pack_sizes: if array, join with commas; otherwise use as string
+                const packSizesValue = Array.isArray(product.pack_sizes) 
+                    ? product.pack_sizes.join(', ') 
+                    : (product.pack_sizes || '');
+                document.getElementById('product-pack-sizes').value = packSizesValue;
+                document.getElementById('product-description').value = product.description || '';
+                document.getElementById('product-composition').value = product.composition || '';
+                document.getElementById('product-usage').value = product.usage || '';
+                document.getElementById('product-old-price').value = product.old_price || '';
+                document.getElementById('product-unit').value = product.unit || 'шт';
+                document.getElementById('product-modal').classList.remove('hidden');
+            } catch (e) {
+                console.error("Error loading product:", e);
+                alert('Ошибка загрузки товара');
+            }
+        }
+
+        function closeProductModal() {
+            document.getElementById('product-modal').classList.add('hidden');
+            currentEditingId = null;
+        }
+
+        // --- DISCOUNT CALCULATOR ---
+        function calculateOldPriceFromDiscount() {
+            const priceInput = document.getElementById('product-price');
+            const discountInput = document.getElementById('product-discount');
+            const oldPriceInput = document.getElementById('product-old-price');
+            
+            const price = parseFloat(priceInput.value);
+            const discount = parseFloat(discountInput.value);
+            
+            // Only calculate if both price and discount are valid numbers
+            if (!isNaN(price) && price > 0 && !isNaN(discount) && discount > 0 && discount < 100) {
+                // Formula: old_price = price / (1 - (discount / 100))
+                // Example: Price 90, Discount 10% -> old_price = 90 / (1 - 0.10) = 90 / 0.90 = 100
+                const oldPrice = price / (1 - (discount / 100));
+                oldPriceInput.value = oldPrice.toFixed(2);
+            }
+            // If discount is empty or invalid, leave old_price as is (user can edit it manually)
+        }
+
+        // Setup event listeners for discount calculation when modal is opened
+        document.addEventListener('DOMContentLoaded', function() {
+            const priceInput = document.getElementById('product-price');
+            const discountInput = document.getElementById('product-discount');
+            
+            if (priceInput && discountInput) {
+                priceInput.addEventListener('input', calculateOldPriceFromDiscount);
+                priceInput.addEventListener('change', calculateOldPriceFromDiscount);
+                discountInput.addEventListener('input', calculateOldPriceFromDiscount);
+                discountInput.addEventListener('change', calculateOldPriceFromDiscount);
+            }
+        });
+
+        // --- SAVE PRODUCT ---
+        async function saveProduct(event) {
+            event.preventDefault();
+            
+            // Build payload object with all fields
+            const payload = {
+                name: document.getElementById('product-name').value,
+                price: parseFloat(document.getElementById('product-price').value),
+                category: document.getElementById('product-category').value || null,
+                image: document.getElementById('product-image').value || '',
+                description: document.getElementById('product-description').value || null,
+                composition: document.getElementById('product-composition').value || null,
+                usage: document.getElementById('product-usage').value || null,
+                old_price: document.getElementById('product-old-price').value ? parseFloat(document.getElementById('product-old-price').value) : null,
+                unit: document.getElementById('product-unit').value || "шт",
+                pack_sizes: document.getElementById('product-pack-sizes').value.split(',').map(s => s.trim()).filter(s => s)
+            };
+            
+            console.log("DEBUG SENDING PAYLOAD:", JSON.stringify(payload, null, 2));
+
+            try {
+                let response;
+                if (currentEditingId) {
+                    // Update
+                    response = await fetch(`/products/${currentEditingId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    // Create
+                    response = await fetch('/products', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+
+                if (response.ok) {
+                    closeProductModal();
+                    loadProducts();
+                    alert('Товар успешно сохранен');
+                } else {
+                    const error = await response.json();
+                    alert('Ошибка: ' + (error.detail || 'Неизвестная ошибка'));
+                }
+            } catch (e) {
+                console.error("Error saving product:", e);
+                alert('Ошибка сохранения товара');
+            }
+        }
+
+        // --- DELETE PRODUCT ---
+        async function deleteProduct(id) {
+            if (!confirm('Вы уверены, что хотите удалить этот товар?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/products/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadProducts();
+                    alert('Товар успешно удален');
+                } else {
+                    const error = await response.json();
+                    alert('Ошибка: ' + (error.detail || 'Неизвестная ошибка'));
+                }
+            } catch (e) {
+                console.error("Error deleting product:", e);
+                alert('Ошибка удаления товара');
+            }
+        }
+
+        // --- ORDER STATUS MODAL ---
+        function openOrderStatusModal(orderId, currentStatus) {
+            currentOrderId = orderId;
+            const select = document.getElementById('order-status-select');
+            select.value = currentStatus || 'Новый';
+            document.getElementById('order-status-modal').classList.remove('hidden');
+        }
+
+        function closeOrderStatusModal() {
+            document.getElementById('order-status-modal').classList.add('hidden');
+            currentOrderId = null;
+        }
+
+        async function saveOrderStatus() {
+            if (!currentOrderId) {
+                alert('Ошибка: ID заказа не найден');
+                return;
+            }
+
+            const select = document.getElementById('order-status-select');
+            const newStatus = select.value;
+
+            if (!newStatus) {
+                alert('Пожалуйста, выберите статус');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/orders/${currentOrderId}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_status: newStatus })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    closeOrderStatusModal();
+                    loadOrders(); // Refresh the table
+                    alert('Статус заказа успешно обновлен');
+                } else {
+                    const error = await response.json();
+                    alert('Ошибка: ' + (error.detail || 'Неизвестная ошибка'));
+                }
+            } catch (e) {
+                console.error("Error updating order status:", e);
+                alert('Ошибка обновления статуса заказа');
+            }
+        }
+
+        // --- IMPORT XML ---
+        async function importXML() {
+            const url = document.getElementById('xml-url-input').value.trim();
+            if (!url) {
+                alert('Введите URL XML файла');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/import_xml', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(`Успешно импортировано товаров: ${result.count || 0}`);
+                    document.getElementById('xml-url-input').value = '';
+                    loadProducts();
+                } else {
+                    alert('Ошибка импорта: ' + (result.detail || 'Неизвестная ошибка'));
+                }
+            } catch (e) {
+                console.error("Error importing XML:", e);
+                alert('Ошибка импорта XML');
+            }
+        }
+
+        // Init
+        loadOrders();
+        setInterval(loadOrders, 10000); // Auto update orders every 10 seconds
+    </script>
+</body>
+</html>

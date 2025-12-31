@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # FastAPI приложение
+  app:
+    build: .
+    container_name: fastapi_app
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/app_db
+      - MONOBANK_API_TOKEN=${MONOBANK_API_TOKEN:-}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - MY_CHAT_ID=${MY_CHAT_ID:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./shop.db:/app/shop.db
+      - ./products.db:/app/products.db
+      - ./.env:/app/.env
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  # PostgreSQL база данных
+  db:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=app_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+

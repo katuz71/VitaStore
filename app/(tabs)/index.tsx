@@ -5,92 +5,43 @@ import Markdown from 'react-native-markdown-display';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrdersContext';
+import { API_URL } from '../config/api';
 
 type Product = {
   id: number;
   name: string;
   price: number;
   image: string;
-  category: string;
+  category?: string;
   rating?: number;
   size?: string;
   description?: string;
   badge?: string;
   quantity?: number;
-  ingredients?: string;
+  composition?: string; // Changed from ingredients to match OrdersContext
   usage?: string;
+  weight?: string;
+  pack_sizes?: string[];  // Changed to array to match backend
+  old_price?: number;  // For discount logic
+  unit?: string;  // Measurement unit (e.g., "шт", "г", "мл")
 };
 
 export default function Index() {
   const router = useRouter();
   const params = useLocalSearchParams();
   // Get cart context
-  const { addItem, items: cartItems, removeItem, clearCart, totalPrice, updateQuantity } = useCart();
+  const { addItem, items: cartItems, removeItem, clearCart, totalPrice, updateQuantity, addOne, removeOne } = useCart();
+
+  // Get products from OrdersContext (fetched from server)
+  const { products: fetchedProducts, isLoading: productsLoading, fetchProducts, orders, removeOrder, clearOrders } = useOrders();
+  
+  // Use products from OrdersContext (fetched from server)
+  const products = fetchedProducts;
 
   // Функция форматирования цены
   const formatPrice = (price: number) => {
     return `${price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ")} ₴`;
   };
-
-  // Products data array
-  const products: Product[] = [
-    {
-      id: 0,
-      name: 'Тестовый товар (1 грн)',
-      price: 1,
-      description: 'Спец. товар для проверки оплат',
-      image: 'https://placehold.co/400?text=Test+1+UAH',
-      category: 'Вітаміни',
-    },
-    {
-      id: 1,
-      name: 'Омега-3 Gold',
-      price: 1200,
-      description: 'Для сердца и сосудов',
-      image: 'https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?auto=format&fit=crop&w=400&q=80',
-      category: 'Вітаміни',
-    },
-    {
-      id: 2,
-      name: 'Витамин C 1000мг',
-      price: 650,
-      description: 'Для иммунитета и бодрости',
-      image: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=400&q=80',
-      category: 'Вітаміни',
-    },
-    {
-      id: 3,
-      name: 'Коллаген Пептидный',
-      price: 2500,
-      description: 'Для суставов и упругости кожи',
-      image: 'https://images.unsplash.com/photo-1598449356475-b9f71db7d847?auto=format&fit=crop&w=400&q=80',
-      category: 'Краса',
-    },
-    {
-      id: 4,
-      name: 'Магний B6',
-      price: 950,
-      description: 'От стресса и для сна',
-      image: 'https://images.unsplash.com/photo-1584017911766-d451b3d0e843?auto=format&fit=crop&w=400&q=80',
-      category: 'Вітаміни',
-    },
-    {
-      id: 5,
-      name: 'Мультивитамины Active',
-      price: 1500,
-      description: 'Энергия и тонус на весь день',
-      image: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=400&q=80',
-      category: 'Вітаміни',
-    },
-    {
-      id: 6,
-      name: 'Сывороточный Протеин',
-      price: 3200,
-      description: 'Для роста мышц и восстановления',
-      image: 'https://images.unsplash.com/photo-1579722821273-0f6c7d44362f?auto=format&fit=crop&w=400&q=80',
-      category: 'Спорт',
-    }
-  ];
 
   // Используем cartItems из контекста вместо локального cart
   const cart = cartItems; // Алиас для совместимости со старым кодом
@@ -104,7 +55,6 @@ export default function Index() {
   const [sortType, setSortType] = useState<'popular' | 'asc' | 'desc'>('popular');
   const [favorites, setFavorites] = useState<Product[]>([]);
   const [favModalVisible, setFavModalVisible] = useState(false);
-  const { orders, removeOrder, clearOrders } = useOrders();
   const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [successVisible, setSuccessVisible] = useState(false);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
@@ -124,6 +74,15 @@ export default function Index() {
       return () => clearTimeout(timer);
     }
   }, [params.showProfile]);
+
+  // Set initial selectedSize when product is selected
+  useEffect(() => {
+    if (selectedProduct?.pack_sizes && selectedProduct.pack_sizes.length > 0) {
+      setSelectedSize(selectedProduct.pack_sizes[0]);
+    } else {
+      setSelectedSize(null);
+    }
+  }, [selectedProduct]);
   const [aiVisible, setAiVisible] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([
@@ -137,7 +96,6 @@ export default function Index() {
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [tab, setTab] = useState<'desc' | 'ingr' | 'use'>('desc');
-  const sizes = ['30', '60', '90', '120'];
 
   const categories = ['Всі', 'Вітаміни', 'Спорт', 'Краса', 'Енергія'];
 
@@ -281,18 +239,21 @@ export default function Index() {
   const subtotal = cart.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
   const totalAmount = subtotal - (subtotal * discount);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Имитация загрузки новых данных
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 2000);
-  }, []);
+    // Загружаем данные с сервера
+    await fetchProducts();
+    setRefreshing(false);
+  }, [fetchProducts]);
 
   // Фильтрация товаров по поисковому запросу и категории
   const getSortedProducts = () => {
+    if (!products || !Array.isArray(products)) {
+      return [];
+    }
+    
     let result = products.filter(p => 
-      (selectedCategory === 'Всі' || p.category === selectedCategory) &&
+      (selectedCategory === 'Всі' || (p.category || 'Без категорії') === selectedCategory) &&
       p.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
@@ -305,6 +266,11 @@ export default function Index() {
   };
   
   const filteredProducts = getSortedProducts();
+
+  // Ensure fetchProducts is called on mount
+  useEffect(() => {
+    fetchProducts();
+  }, []); // Empty dependency array = run once on mount
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -320,67 +286,91 @@ export default function Index() {
   }, []);
 
   // Render Product Item для сетки из 2 колонок
-  const renderProductItem = ({ item }: { item: Product }) => (
-    <TouchableOpacity 
-      onPress={() => {
-        setSelectedProduct(item);
-        setSelectedSize(null);
-        setQuantity(1);
-        setModalVisible(true);
-      }}
-      activeOpacity={0.8}
-      style={{ 
-        flex: 1, 
-        marginBottom: 0,
-        backgroundColor: 'white', 
-        borderRadius: 15, 
-        padding: 10,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-        maxWidth: (Dimensions.get('window').width - 16) / 2
-      }}
-    >
-      <View style={{ height: 140, marginBottom: 10, borderRadius: 10, overflow: 'hidden' }}>
-        <Image source={{ uri: item.image }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
-        {/* Бейдж */}
-        {item.badge && (
-          <View style={{ position: 'absolute', top: 5, left: 5, backgroundColor: 'black', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-            <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>{item.badge}</Text>
-          </View>
-        )}
-        {/* Лайк */}
-        <TouchableOpacity 
-          onPress={() => toggleFavorite(item)}
-          style={{ position: 'absolute', top: 5, right: 5, backgroundColor: 'rgba(255,255,255,0.8)', padding: 5, borderRadius: 15 }}
-        >
-          <Ionicons name={favorites.some(f => f.id === item.id) ? "heart" : "heart-outline"} size={16} color={favorites.some(f => f.id === item.id) ? "red" : "black"} />
-        </TouchableOpacity>
-      </View>
+  const renderProductItem = ({ item }: { item: Product }) => {
+    // Safe value extraction with type checking
+    const safeName = item.name && typeof item.name === 'string' ? item.name : '';
+    const safeCategory = item.category && typeof item.category === 'string' ? item.category : 'Без категорії';
+    const safeBadge = item.badge && typeof item.badge === 'string' ? item.badge : null;
+    const safePrice = typeof item.price === 'number' ? item.price : 0;
+    const safeOldPrice = typeof item.old_price === 'number' ? item.old_price : null;
+    const hasDiscount = safeOldPrice !== null && safeOldPrice > safePrice;
+    const imageUri = item.image?.startsWith('http') ? String(item.image) : `${API_URL}${String(item.image || '')}`;
+    const isFavorite = favorites.some(f => f.id === item.id);
 
-      <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 4 }}>{item.name}</Text>
-      <Text style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>{item.category}</Text>
-      
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={{ fontSize: 15, fontWeight: 'bold' }}>{formatPrice(item.price)}</Text>
-        
-        {/* КНОПКА БЫСТРОЙ ПОКУПКИ */}
-        <TouchableOpacity 
-          onPress={(e) => {
-            e.stopPropagation();
-            Vibration.vibrate(50); // Легкий отклик (50мс)
-            addItem(item, 30); // Добавляем товар с фасуванням 30 шт
-            showToast(`+1 ${item.name} у кошику`);
-          }}
-          style={{ backgroundColor: 'black', borderRadius: 20, width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ionicons name="add" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+    return (
+      <TouchableOpacity 
+        onPress={() => {
+          setSelectedProduct(item);
+          setSelectedSize(null);
+          setQuantity(1);
+          setModalVisible(true);
+        }}
+        activeOpacity={0.8}
+        style={{ 
+          flex: 1, 
+          marginBottom: 0,
+          backgroundColor: 'white', 
+          borderRadius: 15, 
+          padding: 10,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3,
+          maxWidth: (Dimensions.get('window').width - 16) / 2
+        }}
+      >
+        <View style={{ height: 140, marginBottom: 10, borderRadius: 10, overflow: 'hidden' }}>
+          <Image source={{ uri: imageUri }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+          {safeBadge && (
+            <View style={{ position: 'absolute', top: 5, left: 5, backgroundColor: 'black', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
+              <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>{safeBadge}</Text>
+            </View>
+          )}
+          <TouchableOpacity 
+            onPress={() => toggleFavorite(item)}
+            style={{ position: 'absolute', top: 5, right: 5, backgroundColor: 'rgba(255,255,255,0.8)', padding: 5, borderRadius: 15 }}
+          >
+            <Ionicons name={isFavorite ? "heart" : "heart-outline"} size={16} color={isFavorite ? "red" : "black"} />
+          </TouchableOpacity>
+        </View>
+
+        {safeName ? (
+          <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 4 }}>
+            {safeName}
+          </Text>
+        ) : null}
+
+        <Text style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+          {safeCategory}
+        </Text>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {hasDiscount && (
+              <Text style={{ textDecorationLine: 'line-through', color: 'gray', fontSize: 14 }}>
+                {formatPrice(safeOldPrice!)}
+              </Text>
+            )}
+            <Text style={{ fontSize: 15, fontWeight: 'bold' }}>
+              {formatPrice(safePrice)}
+            </Text>
+          </View>
+          <TouchableOpacity 
+            onPress={(e) => {
+              e.stopPropagation();
+              Vibration.vibrate(50);
+              addItem(item, 30);
+              showToast(`+1 ${safeName} у кошику`);
+            }}
+            style={{ backgroundColor: 'black', borderRadius: 20, width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <Ionicons name="add" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -444,7 +434,7 @@ export default function Index() {
         showsHorizontalScrollIndicator={false}
         renderItem={({ item }) => (
           <View style={{ width: Dimensions.get('window').width - 40, height: 200, marginRight: 20, overflow: 'hidden' }}>
-            <Image source={{ uri: item.image }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+            <Image source={{ uri: item.image?.startsWith('http') ? item.image : `${API_URL}${item.image}` }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: 20, backgroundColor: 'rgba(0,0,0,0.3)' }}>
               <Text style={{ color: 'white', fontSize: 24, fontWeight: 'bold' }}>{item.title}</Text>
               <Text style={{ color: '#eee', fontSize: 16, marginTop: 4 }}>{item.subtitle}</Text>
@@ -519,7 +509,8 @@ export default function Index() {
       {/* SORT & COUNT PANEL */}
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 15 }}>
         <Text style={{ color: '#888', fontWeight: '600' }}>
-          Знайдено: {filteredProducts.length}
+          <Text>Знайдено: </Text>
+          <Text>{filteredProducts.length}</Text>
         </Text>
 
         <TouchableOpacity 
@@ -539,28 +530,35 @@ export default function Index() {
         </TouchableOpacity>
       </View>
 
-      <FlatList
-        data={filteredProducts}
-        renderItem={renderProductItem}
-        keyExtractor={item => item.id.toString()}
-        numColumns={2}
-        key={2}
-        columnWrapperStyle={{ justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#000']}
-          />
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyStateContainer}>
-            <Text style={styles.emptyStateText}>😔</Text>
-            <Text style={styles.emptyStateMessage}>Нічого не знайдено</Text>
-          </View>
-        }
-      />
+      {productsLoading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 100 }}>
+          <ActivityIndicator size="large" color="black" />
+          <Text style={{ marginTop: 10, color: '#666' }}>Завантаження товарів...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredProducts}
+          renderItem={renderProductItem}
+          keyExtractor={item => item.id.toString()}
+          numColumns={2}
+          key={2}
+          columnWrapperStyle={{ justifyContent: 'space-between', marginBottom: 12, paddingHorizontal: 1 }}
+          contentContainerStyle={{ paddingHorizontal: 2, paddingBottom: 100 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#000']}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyStateContainer}>
+              <Text style={styles.emptyStateText}>😔</Text>
+              <Text style={styles.emptyStateMessage}>Нічого не знайдено</Text>
+            </View>
+          }
+        />
+      )}
       <Modal animationType="slide" visible={modalVisible}>
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -577,9 +575,20 @@ export default function Index() {
                 <View style={styles.cartItemInfo}>
                   <Text style={styles.cartItemName}>{item.name}</Text>
                   {item.size && (
-                    <Text style={{ color: 'gray', fontSize: 12 }}>Фасування: {item.size} шт.</Text>
+                    <Text style={{ color: 'gray', fontSize: 12 }}>
+                      <Text>Фасування: </Text>
+                      <Text>{item.size} </Text>
+                      <Text>{(item as any).unit || 'шт'}.</Text>
+                    </Text>
                   )}
-                  <Text style={styles.cartItemPrice}>{formatPrice(item.price)}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {(item as any).old_price && (item as any).old_price > item.price && (
+                      <Text style={{ textDecorationLine: 'line-through', color: 'gray', fontSize: 12 }}>
+                        {formatPrice((item as any).old_price)}
+                      </Text>
+                    )}
+                    <Text style={styles.cartItemPrice}>{formatPrice(item.price)}</Text>
+                  </View>
                 </View>
                 <TouchableOpacity onPress={() => removeFromCart(index)}>
                   <Text style={styles.removeButton}>Видалити</Text>
@@ -589,7 +598,10 @@ export default function Index() {
             contentContainerStyle={styles.cartListContent}
           />
           <View style={styles.totalContainer}>
-            <Text style={styles.totalText}>Разом: {formatPrice(totalAmount)}</Text>
+            <Text style={styles.totalText}>
+              <Text>Разом: </Text>
+              <Text>{formatPrice(totalAmount)}</Text>
+            </Text>
             <TouchableOpacity
               style={[styles.checkoutButton, cartItems.length === 0 && styles.checkoutButtonDisabled]}
               onPress={() => {
@@ -661,7 +673,7 @@ export default function Index() {
                   {/* Фото */}
                   <TouchableOpacity
                     onPress={() => {
-                      const product = products.find(p => p.id === item.id);
+                      const product = (products || []).find(p => p.id === item.id);
                       if (product) {
                         setCartModalVisible(false);
                         setTimeout(() => {
@@ -674,13 +686,15 @@ export default function Index() {
                       }
                     }}
                   >
-                    <Image source={{ uri: item.image }} style={{ width: 70, height: 70, borderRadius: 10, backgroundColor: '#f5f5f5' }} />
+                    <Image source={{ uri: item.image?.startsWith('http') ? item.image : `${API_URL}${item.image}` }} style={{ width: 70, height: 70, borderRadius: 10, backgroundColor: '#f5f5f5' }} />
                   </TouchableOpacity>
                   
                   {/* Инфо */}
                   <View style={{ flex: 1, marginLeft: 15 }}>
-                    <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: 'bold' }}>{item.name}</Text>
-                    <Text style={{ fontSize: 13, color: '#666', marginTop: 2 }}>Фасування: {((item as any).packSize || item.size || '30')} шт.</Text>
+                    <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: 'bold' }}>
+                      <Text>{item.name}</Text>
+                      <Text> ({(item as any).unit || (item as any).packSize || 'шт'})</Text>
+                    </Text>
                     <Text style={{ fontSize: 15, fontWeight: '600', marginTop: 5 }}>{formatPrice(item.price * (item.quantity || 1))}</Text>
                   </View>
 
@@ -689,8 +703,8 @@ export default function Index() {
                     <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 8, padding: 2, marginBottom: 8 }}>
                       <TouchableOpacity 
                         onPress={() => {
-                          const itemPackSize = (item as any).packSize || parseInt(item.size || '30');
-                          updateQuantity(item.id, itemPackSize, -1);
+                          const itemUnit = (item as any).unit || (item as any).packSize || 'шт';
+                          removeOne(item.id, itemUnit);
                         }}
                         style={{ padding: 6 }}
                       >
@@ -701,8 +715,8 @@ export default function Index() {
                       
                       <TouchableOpacity 
                         onPress={() => {
-                          const itemPackSize = (item as any).packSize || parseInt(item.size || '30');
-                          updateQuantity(item.id, itemPackSize, 1);
+                          const itemUnit = (item as any).unit || (item as any).packSize || 'шт';
+                          addOne(item.id, itemUnit);
                         }}
                         style={{ padding: 6 }}
                       >
@@ -735,57 +749,60 @@ export default function Index() {
               />
               {cart.length > 0 && (
                 <>
-              <View style={styles.cartModalFooter}>
-                {/* Промокод */}
-                <View style={{ flexDirection: 'row', marginBottom: 20, marginTop: 10 }}>
-                  <TextInput
-                    placeholder="Промокод (напр. START)"
-                    value={promoCode}
-                    onChangeText={setPromoCode}
-                    autoCapitalize="characters"
-                    style={{ flex: 1, backgroundColor: '#f5f5f5', padding: 12, borderRadius: 10, marginRight: 10 }}
-                  />
-                  <TouchableOpacity 
-                    onPress={applyPromo}
-                    style={{ backgroundColor: 'black', justifyContent: 'center', paddingHorizontal: 20, borderRadius: 10 }}
-                  >
-                    <Text style={{ color: 'white', fontWeight: 'bold' }}>OK</Text>
-                  </TouchableOpacity>
-                </View>
+                  <View style={styles.cartModalFooter}>
+                    {/* Промокод */}
+                    <View style={{ flexDirection: 'row', marginBottom: 20, marginTop: 10 }}>
+                      <TextInput
+                        placeholder="Промокод (напр. START)"
+                        value={promoCode}
+                        onChangeText={setPromoCode}
+                        autoCapitalize="characters"
+                        style={{ flex: 1, backgroundColor: '#f5f5f5', padding: 12, borderRadius: 10, marginRight: 10 }}
+                      />
+                      <TouchableOpacity 
+                        onPress={applyPromo}
+                        style={{ backgroundColor: 'black', justifyContent: 'center', paddingHorizontal: 20, borderRadius: 10 }}
+                      >
+                        <Text style={{ color: 'white', fontWeight: 'bold' }}>OK</Text>
+                      </TouchableOpacity>
+                    </View>
 
-                {/* Отображение скидки (если есть) */}
-                {discount > 0 && (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>Знижка 10%:</Text>
-                    <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>- {formatPrice(subtotal * discount)}</Text>
+                    {/* Отображение скидки (если есть) */}
+                    {discount > 0 && (
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>Знижка 10%:</Text>
+                        <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>- {formatPrice(subtotal * discount)}</Text>
+                      </View>
+                    )}
+
+                    <Text style={styles.cartModalTotal}>
+                      <Text>Разом: </Text>
+                      <Text>{formatPrice(totalAmount)}</Text>
+                    </Text>
+                    <TouchableOpacity
+                      disabled={cartItems.length === 0}
+                      onPress={() => {
+                        if (cartItems.length === 0) {
+                          Alert.alert('Кошик порожній', 'Додайте товари до кошика');
+                          return;
+                        }
+                        setCartModalVisible(false);
+                        router.push('/checkout');
+                      }}
+                      style={{
+                        backgroundColor: cartItems.length > 0 ? 'black' : '#ccc', // Серый, если пусто
+                        paddingVertical: 15,
+                        borderRadius: 12,
+                        alignItems: 'center',
+                        marginTop: 20
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
+                        Оформити замовлення
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                )}
-
-                <Text style={styles.cartModalTotal}>Разом: {formatPrice(totalAmount)}</Text>
-                <TouchableOpacity
-                  disabled={cartItems.length === 0}
-                  onPress={() => {
-                    if (cartItems.length === 0) {
-                      Alert.alert('Кошик порожній', 'Додайте товари до кошика');
-                      return;
-                    }
-                    setCartModalVisible(false);
-                    router.push('/checkout');
-                  }}
-                  style={{
-                    backgroundColor: cartItems.length > 0 ? 'black' : '#ccc', // Серый, если пусто
-                    paddingVertical: 15,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                    marginTop: 20
-                  }}
-                >
-                  <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
-                    Оформити замовлення
-                  </Text>
-                </TouchableOpacity>
-              </View>
-                </>
+                  </>
               )}
         </SafeAreaView>
       </Modal>
@@ -803,7 +820,7 @@ export default function Index() {
                 
                 {/* 1. Фото товара + Кнопки управления (Overlay) */}
                 <View>
-                  <Image source={{ uri: selectedProduct.image }} style={{ width: '100%', height: 350, resizeMode: 'cover' }} />
+                  <Image source={{ uri: selectedProduct.image?.startsWith('http') ? selectedProduct.image : `${API_URL}${selectedProduct.image}` }} style={{ width: '100%', height: 350, resizeMode: 'cover' }} />
                   
                   {/* Верхняя панель на фото */}
                   <View style={{ position: 'absolute', top: 20, left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -843,7 +860,14 @@ export default function Index() {
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 26, fontWeight: 'bold', marginBottom: 5 }}>{selectedProduct.name}</Text>
-                      <Text style={{ fontSize: 22, fontWeight: '600', color: '#000' }}>{formatPrice(selectedProduct.price)}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        {selectedProduct.old_price && selectedProduct.old_price > selectedProduct.price && (
+                          <Text style={{ textDecorationLine: 'line-through', color: 'gray', fontSize: 18 }}>
+                            {formatPrice(selectedProduct.old_price)}
+                          </Text>
+                        )}
+                        <Text style={{ fontSize: 22, fontWeight: '600', color: '#000' }}>{formatPrice(selectedProduct.price)}</Text>
+                      </View>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', padding: 6, borderRadius: 8 }}>
                       <Ionicons name="star" size={16} color="#FFD700" />
@@ -868,25 +892,33 @@ export default function Index() {
                   </View>
 
                   {/* 4. ВЫБОР ФАСОВКИ */}
-                  <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 8 }}>Фасування (шт)</Text>
-                  <View style={{ flexDirection: 'row', marginBottom: 15 }}>
-                    {['30', '60', '90', '120'].map((size) => (
-                      <TouchableOpacity
-                        key={size}
-                        onPress={() => setSelectedSize(size)}
-                        style={{
-                          width: 50, height: 50, borderRadius: 25,
-                          borderWidth: 1,
-                          borderColor: selectedSize === size ? 'black' : '#e0e0e0',
-                          backgroundColor: selectedSize === size ? 'black' : 'white',
-                          alignItems: 'center', justifyContent: 'center',
-                          marginRight: 10
-                        }}
-                      >
-                        <Text style={{ color: selectedSize === size ? 'white' : 'black', fontWeight: 'bold' }}>{size}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                  {selectedProduct.pack_sizes && selectedProduct.pack_sizes.length > 0 && (
+                    <>
+                      <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 8 }}>
+                        <Text>Фасування (</Text>
+                        <Text>{selectedProduct.unit || 'шт'}</Text>
+                        <Text>)</Text>
+                      </Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 15 }}>
+                        {selectedProduct.pack_sizes.map((size) => (
+                          <TouchableOpacity
+                            key={size}
+                            onPress={() => setSelectedSize(size)}
+                            style={{
+                              minWidth: 50, height: 50, borderRadius: 25,
+                              borderWidth: 1,
+                              borderColor: selectedSize === size ? 'black' : '#e0e0e0',
+                              backgroundColor: selectedSize === size ? 'black' : 'white',
+                              alignItems: 'center', justifyContent: 'center',
+                              paddingHorizontal: 16
+                            }}
+                          >
+                            <Text style={{ color: selectedSize === size ? 'white' : 'black', fontWeight: 'bold' }}>{size}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </>
+                  )}
 
                   {/* 5. ВКЛАДКИ (Опис / Склад / Прийом) */}
                   <View style={{ flexDirection: 'row', marginBottom: 15, backgroundColor: '#f5f5f5', borderRadius: 10, padding: 4 }}>
@@ -910,13 +942,13 @@ export default function Index() {
                   
                   {/* Текст описания */}
                   <Text style={{ color: '#555', lineHeight: 22, fontSize: 15, marginBottom: 30, minHeight: 80 }}>
-                    {tab === 'desc' ? (selectedProduct.description || 'Опис для цього товару поки відсутній.') : tab === 'ingr' ? (selectedProduct.ingredients || 'Склад не вказано.') : (selectedProduct.usage || 'Спосіб прийому не вказано.')}
+                    {tab === 'desc' ? (selectedProduct.description || 'Опис для цього товару поки відсутній.') : tab === 'ingr' ? (selectedProduct.composition || 'Склад не вказано.') : (selectedProduct.usage || 'Спосіб прийому не вказано.')}
                   </Text>
 
                   {/* 6. Схожі товари */}
                   <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 15 }}>Схожі товари</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {products
+                    {(products || [])
                       .filter(p => p.category === selectedProduct.category && p.id !== selectedProduct.id)
                       .map(item => (
                         <TouchableOpacity
@@ -929,7 +961,7 @@ export default function Index() {
                           }}
                           style={{ width: 120, marginRight: 15 }}
                         >
-                          <Image source={{ uri: item.image }} style={{ width: 120, height: 120, borderRadius: 12, backgroundColor: '#f0f0f0' }} />
+                          <Image source={{ uri: item.image?.startsWith('http') ? item.image : `${API_URL}${item.image}` }} style={{ width: 120, height: 120, borderRadius: 12, backgroundColor: '#f0f0f0' }} />
                           <Text numberOfLines={1} style={{ marginTop: 8, fontWeight: '600', fontSize: 13 }}>{item.name}</Text>
                           <Text style={{ color: '#666', fontSize: 12 }}>{formatPrice(item.price)}</Text>
                         </TouchableOpacity>
@@ -950,7 +982,10 @@ export default function Index() {
                     <TouchableOpacity onPress={() => setQuantity(Math.max(1, quantity - 1))} style={{ padding: 10 }}>
                       <Ionicons name="remove" size={20} color="black" />
                     </TouchableOpacity>
-                    <Text style={{ fontSize: 16, fontWeight: 'bold', marginHorizontal: 10 }}>{quantity}</Text>
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', marginHorizontal: 10 }}>
+                      <Text>{quantity} </Text>
+                      <Text>{selectedProduct.unit || 'шт'}</Text>
+                    </Text>
                     <TouchableOpacity onPress={() => setQuantity(quantity + 1)} style={{ padding: 10 }}>
                       <Ionicons name="add" size={20} color="black" />
                     </TouchableOpacity>
@@ -958,22 +993,29 @@ export default function Index() {
 
                   <TouchableOpacity 
                     onPress={() => {
-                      if (!selectedSize) {
-                        Alert.alert("Оберіть фасування", "Будь ласка, оберіть кількість капсул.");
-                        return;
+                      // Force combination of Size + Unit
+                      let finalUnit = selectedProduct.unit || 'шт';
+                      
+                      // If product has pack sizes (e.g., ["200", "500"])
+                      if (selectedProduct.pack_sizes && selectedProduct.pack_sizes.length > 0) {
+                        if (!selectedSize) {
+                          Alert.alert('Увага', 'Будь ласка, оберіть фасування');
+                          return;
+                        }
+                        // Combine: "200" + " " + "г" -> "200 г"
+                        finalUnit = `${selectedSize} ${selectedProduct.unit || ''}`.trim();
                       }
-                      // Add the product with the currently selected pack size
-                      const selectedPack = parseInt(selectedSize);
-                      console.log('Calling addItem with:', selectedProduct.name, 'packSize:', selectedPack);
-                      addItem(selectedProduct, selectedPack);
-                      console.log('addItem called, current cartItems:', cartItems);
+                      
+                      console.log("DEBUG: Adding to cart with unit:", finalUnit); // Check terminal
+                      addItem(selectedProduct, quantity, selectedSize || '', finalUnit);
                       setModalVisible(false);
                       showToast('Товар додано в кошик');
                     }}
                     style={{ flex: 1, backgroundColor: 'black', borderRadius: 14, paddingVertical: 16, alignItems: 'center' }}
                   >
                     <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-                      У кошик • {formatPrice(selectedProduct.price * quantity)}
+                      <Text>У кошик • </Text>
+                      <Text>{formatPrice(selectedProduct.price * quantity)}</Text>
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1054,7 +1096,7 @@ export default function Index() {
                   }}
                   style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, backgroundColor: 'white', padding: 10, borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 }}
                 >
-                  <Image source={{ uri: item.image }} style={{ width: 60, height: 60, borderRadius: 8, marginRight: 15, backgroundColor: '#f0f0f0' }} />
+                  <Image source={{ uri: item.image?.startsWith('http') ? item.image : `${API_URL}${item.image}` }} style={{ width: 60, height: 60, borderRadius: 8, marginRight: 15, backgroundColor: '#f0f0f0' }} />
                   
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: 'bold', fontSize: 16 }}>{item.name}</Text>
@@ -1107,7 +1149,7 @@ export default function Index() {
             {/* Список заказов */}
             <FlatList
               data={orders}
-              keyExtractor={item => item.id}
+              keyExtractor={item => String(item.id)}
               contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
               ListEmptyComponent={
                 <View style={{ alignItems: 'center', marginTop: 100 }}>
@@ -1121,10 +1163,16 @@ export default function Index() {
                   {/* Верхняя часть: Номер, Дата, Статус */}
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: 'bold', fontSize: 16 }}>Замовлення №{item.id}</Text>
+                      <Text style={{ fontWeight: 'bold', fontSize: 16 }}>
+                        <Text>Замовлення №</Text>
+                        <Text>{item.id}</Text>
+                      </Text>
                       <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>{item.date}</Text>
                       {item.name && (
-                        <Text style={{ color: '#666', fontSize: 13, marginTop: 4 }}>Клієнт: {item.name}</Text>
+                        <Text style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
+                          <Text>Клієнт: </Text>
+                          <Text>{item.name}</Text>
+                        </Text>
                       )}
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -1158,7 +1206,7 @@ export default function Index() {
                       <Ionicons name="location-outline" size={16} color="#666" />
                       <Text style={{ marginLeft: 5, color: '#555', fontSize: 13, flex: 1 }}>
                         <Text style={{ fontWeight: '600' }}>Місто: </Text>
-                        {item.city}
+                        <Text>{item.city}</Text>
                       </Text>
                     </View>
                   )}
@@ -1169,7 +1217,7 @@ export default function Index() {
                       <Ionicons name="cube-outline" size={16} color="#666" style={{ marginTop: 2 }} />
                       <Text style={{ marginLeft: 5, color: '#555', fontSize: 13, flex: 1 }}>
                         <Text style={{ fontWeight: '600' }}>Відділення: </Text>
-                        {item.warehouse}
+                        <Text>{item.warehouse}</Text>
                       </Text>
                     </View>
                   )}
@@ -1180,7 +1228,7 @@ export default function Index() {
                       <Ionicons name="call-outline" size={16} color="#666" />
                       <Text style={{ marginLeft: 5, color: '#555', fontSize: 13, flex: 1 }}>
                         <Text style={{ fontWeight: '600' }}>Телефон: </Text>
-                        {item.phone}
+                        <Text>{item.phone}</Text>
                       </Text>
                     </View>
                   )}
@@ -1189,7 +1237,7 @@ export default function Index() {
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
                     {item.items.map((prod, index) => (
                       <View key={index} style={{ marginRight: 10, width: 60 }}>
-                        <Image source={{ uri: prod.image }} style={{ width: 60, height: 60, borderRadius: 10, backgroundColor: '#f0f0f0' }} />
+                        <Image source={{ uri: prod.image?.startsWith('http') ? prod.image : `${API_URL}${prod.image}` }} style={{ width: 60, height: 60, borderRadius: 10, backgroundColor: '#f0f0f0' }} />
                         <View style={{ position: 'absolute', bottom: -5, right: -5, backgroundColor: 'black', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
                           <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>{prod.quantity || 1}</Text>
                         </View>
@@ -1289,7 +1337,7 @@ export default function Index() {
                   onLinkPress={(url) => {
                     if (url.startsWith('product://')) {
                       const id = url.split('product://')[1];
-                      const product = products.find(p => p.id.toString() === id);
+                      const product = (products || []).find(p => p.id.toString() === id);
                       if (product) {
                         setSelectedProduct(product);
                         setSelectedSize(null);

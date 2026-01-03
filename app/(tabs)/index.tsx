@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Animated, Dimensions, FlatList, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from "react-native";
-import Markdown from 'react-native-markdown-display';
 import { API_URL } from '../config/api';
 import { useCart } from '../context/CartContext';
 import { OrderItem, useOrders } from '../context/OrdersContext';
@@ -328,27 +327,32 @@ export default function Index() {
     }
   };
 
-  const CHAT_API_URL = 'http://192.168.1.161:8001/chat';
+  const CHAT_API_URL = `${API_URL}/chat`;
 
   const sendMessage = async () => {
-    if (!inputMessage.trim()) return;
+    if (!inputMessage.trim() || isLoading) return;
 
     const userMessage = inputMessage.trim();
     const userMsg = { id: Date.now(), text: userMessage, sender: 'user' };
-    setMessages(prev => [...prev, userMsg]);
+    
+    // Добавляем сообщение пользователя
+    const updatedMessages = [...messages, userMsg];
+    setMessages(updatedMessages);
     setInputMessage('');
     setIsLoading(true);
+    
+    // Скроллим после добавления сообщения пользователя
+    setTimeout(() => {
+      chatFlatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
 
-    // Construct conversation history
-    const history = messages.map(msg => ({
-      role: msg.sender === 'user' ? 'user' : 'assistant', // Adjust 'sender' check based on your actual state
-      content: msg.text // Adjust 'text' if your field is named differently
+    // Формируем историю для отправки
+    const history = updatedMessages.map(msg => ({
+      role: msg.sender === 'user' ? 'user' : 'assistant',
+      content: msg.text
     }));
     
-    // Add the current new message explicitly
-    history.push({ role: 'user', content: userMessage });
-
-    // Call real API
+    // Отправляем запрос
     try {
       const response = await fetch(CHAT_API_URL, {
         method: 'POST',
@@ -363,14 +367,34 @@ export default function Index() {
       }
 
       const data = await response.json();
-      const botMsg = { id: Date.now() + 1, text: data.response, sender: 'bot' };
+      const replyText = data.text || data.response || 'Вибачте, не вдалося отримати відповідь.';
+      const recommendedProducts = data.products || [];
+      
+      const botMsg = { 
+        id: Date.now() + 1, 
+        text: replyText, 
+        sender: 'bot',
+        products: recommendedProducts
+      };
+      
+      // Добавляем ответ бота
       setMessages(prev => [...prev, botMsg]);
-      Vibration.vibrate(50); // Вибрация при ответе
+      
+      // Скроллим после получения ответа
+      setTimeout(() => {
+        chatFlatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      
+      Vibration.vibrate(50);
+      setIsLoading(false);
     } catch (error) {
       console.error('Error calling API:', error);
-      const errorMsg = { id: Date.now() + 1, text: 'Вибачте, не вдалося підключитися до сервера. Перевірте, чи запущений сервер.', sender: 'bot' };
+      const errorMsg = { 
+        id: Date.now() + 1, 
+        text: 'Вибачте, не вдалося підключитися до сервера. Перевірте, чи запущений сервер.', 
+        sender: 'bot' 
+      };
       setMessages(prev => [...prev, errorMsg]);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -1438,88 +1462,238 @@ export default function Index() {
       </Modal>
       {/* AI CHAT MODAL */}
       <Modal animationType="slide" visible={aiVisible} presentationStyle="pageSheet">
-        <SafeAreaView style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f5f5' }}>
           <KeyboardAvoidingView 
             style={{ flex: 1 }} 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
             keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
           >
             {/* Header Чата */}
-            <View style={{ padding: 15, backgroundColor: 'white', borderBottomWidth: 1, borderColor: '#eee', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <View style={{ width: 40, height: 40, backgroundColor: '#e0f7fa', borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                  <Ionicons name="happy" size={24} color="#00bcd4" />
+            <View style={{ 
+              padding: 15, 
+              backgroundColor: 'white', 
+              borderBottomWidth: 1, 
+              borderColor: '#e0e0e0', 
+              flexDirection: 'row', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.05,
+              shadowRadius: 4,
+              elevation: 2
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <View style={{ 
+                  width: 45, 
+                  height: 45, 
+                  backgroundColor: '#e0f7fa', 
+                  borderRadius: 22.5, 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  marginRight: 12 
+                }}>
+                  <Ionicons name="chatbubble-ellipses" size={24} color="#00bcd4" />
                 </View>
-                <View>
-                  <Text style={{ fontWeight: 'bold', fontSize: 16 }}>VitaBot AI 🤖</Text>
-                  <Text style={{ color: '#4CAF50', fontSize: 12 }}>Online</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: 'bold', fontSize: 17, color: '#000' }}>VitaBot AI 🤖</Text>
+                  <Text style={{ color: '#4CAF50', fontSize: 13, marginTop: 2 }}>Online • Готовий допомогти</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setAiVisible(false)}>
-                <Text style={{ fontSize: 16, fontWeight: 'bold' }}>Закрити</Text>
+              <TouchableOpacity 
+                onPress={() => setAiVisible(false)}
+                style={{ 
+                  padding: 8,
+                  borderRadius: 8
+                }}
+              >
+                <Ionicons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
-            {/* Сообщения */}
+            {/* Сообщения - FlatList занимает всё доступное место */}
             <FlatList
               ref={chatFlatListRef}
               data={messages}
-              keyExtractor={item => item.id.toString()}
-              contentContainerStyle={{ padding: 15 }}
+              keyExtractor={item => `msg-${item.id}`}
+              contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
               style={{ flex: 1 }}
-              onContentSizeChange={() => chatFlatListRef.current?.scrollToEnd({ animated: true })}
-              onLayout={() => chatFlatListRef.current?.scrollToEnd({ animated: true })}
+              onContentSizeChange={() => {
+                setTimeout(() => {
+                  chatFlatListRef.current?.scrollToEnd({ animated: true });
+                }, 100);
+              }}
+              onLayout={() => {
+                setTimeout(() => {
+                  chatFlatListRef.current?.scrollToEnd({ animated: false });
+                }, 100);
+              }}
               renderItem={({ item }) => (
-                <View style={{ alignSelf: item.sender === 'user' ? 'flex-end' : 'flex-start', backgroundColor: item.sender === 'user' ? 'black' : 'white', padding: 12, borderRadius: 16, maxWidth: '80%', marginBottom: 10, borderBottomRightRadius: item.sender === 'user' ? 2 : 16, borderBottomLeftRadius: item.sender === 'bot' ? 2 : 16 }}>
-                <Markdown
-                  style={{
-                    body: {
-                      color: item.sender === 'user' ? 'white' : 'black',
-                      fontSize: 16,
-                      margin: 0,
-                      padding: 0,
-                    },
-                    paragraph: {
-                      marginTop: 0,
-                      marginBottom: 0,
-                    },
-                  }}
-                  onLinkPress={(url) => {
-                    if (url.startsWith('product://')) {
-                      const id = url.split('product://')[1];
-                      const product = (products || []).find(p => p.id.toString() === id);
-                      if (product) {
-                        router.push(`/product/${product.id}`);
-                      }
-                      return false; // Prevent default browser opening
-                    }
-                    return true; // Allow other links to open normally
-                  }}
-                >
-                  {item.text}
-                </Markdown>
+                <View style={{ 
+                  marginBottom: 16,
+                  alignSelf: item.sender === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '85%'
+                }}>
+                  {/* Блок сообщения */}
+                  <View style={{ 
+                    backgroundColor: item.sender === 'user' ? '#000' : '#fff',
+                    padding: 14,
+                    borderRadius: 18,
+                    borderBottomRightRadius: item.sender === 'user' ? 4 : 18,
+                    borderBottomLeftRadius: item.sender === 'bot' ? 4 : 18,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: item.sender === 'user' ? 0.2 : 0.1,
+                    shadowRadius: 2,
+                    elevation: 2
+                  }}>
+                    <Text style={{ 
+                      color: item.sender === 'user' ? '#fff' : '#000',
+                      fontSize: 15,
+                      lineHeight: 20
+                    }}>
+                      {item.text}
+                    </Text>
+                  </View>
+                  
+                  {/* Рекомендованные товары (только для сообщений бота) */}
+                  {item.sender === 'bot' && (item as any).products && Array.isArray((item as any).products) && (item as any).products.length > 0 && (
+                    <View style={{ marginTop: 12 }}>
+                      <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ paddingRight: 16 }}
+                      >
+                        {((item as any).products as any[]).map((product: any, idx: number) => (
+                          <TouchableOpacity
+                            key={`product-${product.id}-${idx}`}
+                            onPress={() => {
+                              setAiVisible(false);
+                              setTimeout(() => {
+                                router.push(`/product/${product.id}`);
+                              }, 300);
+                            }}
+                            style={{
+                              width: 120,
+                              backgroundColor: 'white',
+                              borderRadius: 12,
+                              marginRight: 12,
+                              padding: 10,
+                              shadowColor: '#000',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.1,
+                              shadowRadius: 4,
+                              elevation: 3,
+                              borderWidth: 1,
+                              borderColor: '#f0f0f0'
+                            }}
+                          >
+                            <Image
+                              source={{ uri: getImageUrl(product.image || product.image_url || product.picture) }}
+                              style={{ 
+                                width: '100%', 
+                                height: 80, 
+                                borderRadius: 8, 
+                                backgroundColor: '#f5f5f5', 
+                                marginBottom: 8 
+                              }}
+                              resizeMode="cover"
+                            />
+                            <Text 
+                              numberOfLines={1} 
+                              style={{ 
+                                fontSize: 12, 
+                                fontWeight: '600', 
+                                marginBottom: 4,
+                                color: '#000'
+                              }}
+                            >
+                              {product.name}
+                            </Text>
+                            <Text style={{ 
+                              fontSize: 13, 
+                              fontWeight: 'bold', 
+                              color: '#000'
+                            }}>
+                              {formatPrice(product.price)}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
                 </View>
               )}
               ListFooterComponent={
                 isLoading ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 15 }}>
-                    <ActivityIndicator size="small" color="#999" style={{ marginRight: 8 }} />
-                    <Text style={{ color: '#999', fontSize: 14 }}>Бот печатает...</Text>
+                  <View style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center', 
+                    paddingVertical: 12, 
+                    paddingHorizontal: 16,
+                    alignSelf: 'flex-start'
+                  }}>
+                    <ActivityIndicator size="small" color="#999" style={{ marginRight: 10 }} />
+                    <Text style={{ color: '#999', fontSize: 14 }}>Бот печатає...</Text>
                   </View>
                 ) : null
               }
             />
 
-            {/* Ввод */}
-            <View style={{ padding: 10, backgroundColor: 'white', flexDirection: 'row', alignItems: 'center' }}>
+            {/* Блок ввода - прижат к низу */}
+            <View style={{ 
+              padding: 12, 
+              backgroundColor: 'white', 
+              borderTopWidth: 1,
+              borderTopColor: '#e0e0e0',
+              flexDirection: 'row', 
+              alignItems: 'center',
+              paddingBottom: Platform.OS === 'ios' ? 12 : 12
+            }}>
               <TextInput
                 value={inputMessage}
                 onChangeText={setInputMessage}
                 placeholder="Запитайте про вітаміни..."
-                style={{ flex: 1, backgroundColor: '#f0f0f0', borderRadius: 20, paddingHorizontal: 15, paddingVertical: 10, marginRight: 10, fontSize: 16 }}
+                placeholderTextColor="#999"
+                multiline
+                maxLength={500}
+                style={{ 
+                  flex: 1, 
+                  backgroundColor: '#f5f5f5', 
+                  borderRadius: 24, 
+                  paddingHorizontal: 16, 
+                  paddingVertical: 10,
+                  marginRight: 10, 
+                  fontSize: 15,
+                  maxHeight: 100,
+                  borderWidth: 1,
+                  borderColor: '#e0e0e0'
+                }}
+                onSubmitEditing={sendMessage}
+                editable={!isLoading}
               />
-              <TouchableOpacity onPress={sendMessage} style={{ backgroundColor: 'black', width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name="send" size={20} color="white" />
+              <TouchableOpacity 
+                onPress={sendMessage} 
+                disabled={!inputMessage.trim() || isLoading}
+                style={{ 
+                  backgroundColor: inputMessage.trim() && !isLoading ? '#000' : '#ccc', 
+                  width: 44, 
+                  height: 44, 
+                  borderRadius: 22, 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 3,
+                  elevation: 3
+                }}
+              >
+                <Ionicons 
+                  name="send" 
+                  size={20} 
+                  color="white" 
+                />
               </TouchableOpacity>
             </View>
 

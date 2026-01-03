@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi import Request
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -15,6 +15,13 @@ from datetime import datetime
 import requests
 import csv
 import io
+import pandas as pd
+import uuid
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения из .env
+load_dotenv()
 
 # --- PYDANTIC MODELS ---
 class XMLImportRequest(BaseModel):
@@ -105,6 +112,18 @@ try:
 except Exception as e:
     print(f"⚠️ Could not mount static files: {e}")
 
+# Create uploads directory if it doesn't exist
+UPLOADS_DIR = "uploads"
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+print(f"✅ Uploads directory ready: {UPLOADS_DIR}")
+
+# Mount uploads directory for serving uploaded files
+try:
+    app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
+    print(f"✅ Static files mounted: /uploads -> {UPLOADS_DIR}")
+except Exception as e:
+    print(f"⚠️ Could not mount uploads directory: {e}")
+
 DB_NAME = 'shop.db'
 
 def fix_db():
@@ -136,7 +155,32 @@ def fix_db():
     except Exception:
         pass
     
-    # Добавляем колонки в таблицу products
+    # Создаем таблицу products (если не существует)
+    try:
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS products (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                price INTEGER NOT NULL,
+                image TEXT,
+                description TEXT,
+                weight TEXT,
+                ingredients TEXT,
+                category TEXT,
+                composition TEXT,
+                usage TEXT,
+                pack_sizes TEXT,
+                old_price REAL,
+                unit TEXT DEFAULT 'шт',
+                variants TEXT
+            )
+        ''')
+        conn.commit()
+        print("✅ Таблица products создана.")
+    except Exception as e:
+        print(f"⚠️ Ошибка создания таблицы products: {e}")
+    
+    # Добавляем колонки в таблицу products (если они еще не существуют)
     try:
         cursor.execute("ALTER TABLE products ADD COLUMN weight TEXT")
         conn.commit()
@@ -192,6 +236,14 @@ def fix_db():
         cursor.execute("ALTER TABLE products ADD COLUMN unit TEXT DEFAULT 'шт'")
         conn.commit()
         print("✅ База обновлена: колонка unit добавлена в products.")
+    except Exception:
+        pass
+    
+    # Добавляем колонку variants для вариантов фасовки с ценами
+    try:
+        cursor.execute("ALTER TABLE products ADD COLUMN variants TEXT")
+        conn.commit()
+        print("✅ База обновлена: колонка variants добавлена в products.")
     except Exception:
         pass
     
@@ -519,6 +571,34 @@ async def import_xml_from_url(request: XMLImportRequest):
     except Exception as e:
         print(f"Error importing XML: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload")
+async def upload_image(request: Request, file: UploadFile = File(...)):
+    """Upload an image file and return its URL"""
+    try:
+        # Validate file type (only images)
+        if not file.content_type or not file.content_type.startswith('image/'):
+            raise HTTPException(status_code=400, detail="File must be an image")
+        
+        # Generate unique filename
+        file_extension = os.path.splitext(file.filename)[1] if file.filename else '.jpg'
+        unique_filename = f"{uuid.uuid4().hex}{file_extension}"
+        file_path = os.path.join(UPLOADS_DIR, unique_filename)
+        
+        # Save file
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+        
+        # Return relative path (client will prepend API_URL)
+        file_path_relative = f"/uploads/{unique_filename}"
+        
+        print(f"✅ File uploaded: {unique_filename} -> {file_path_relative}")
+        return {"url": file_path_relative, "filename": unique_filename}
+        
+    except Exception as e:
+        print(f"❌ Error uploading file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
 
 @app.post("/upload_csv")
 async def upload_csv(file: UploadFile = File(...)):
@@ -944,6 +1024,7 @@ class OrderItem(BaseModel):
     quantity: int
     packSize: Optional[Any] = None
     unit: Optional[str] = None
+    variant_info: Optional[str] = None  # Variant size information (e.g., "10 шт", "100 г")
 
 class OrderRequest(BaseModel):
     name: str
@@ -972,6 +1053,7 @@ class Product(BaseModel):
     pack_sizes: Optional[List[str]] = None  # Returned as list from API
     old_price: Optional[float] = None  # For discount logic
     unit: Optional[str] = "шт"  # Measurement unit (e.g., "г", "мл")
+    variants: Optional[Any] = None  # Variants with prices: [{"size": "10 шт", "price": 100}, ...]
 
     class Config:
         from_attributes = True
@@ -989,6 +1071,7 @@ class ProductCreate(BaseModel):
     pack_sizes: Optional[Union[str, List[str]]] = None  # Фасування - accepts string or list, converted to string in endpoint
     old_price: Optional[float] = None  # For discount logic
     unit: Optional[str] = "шт"  # Measurement unit (e.g., "г", "мл")
+    variants: Optional[Any] = None  # Variants with prices: [{"size": "10 шт", "price": 100}, ...]
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
@@ -1003,6 +1086,7 @@ class ProductUpdate(BaseModel):
     pack_sizes: Optional[Union[str, List[str]]] = None  # Фасування - accepts string or list
     old_price: Optional[float] = None  # For discount logic
     unit: Optional[str] = None  # Measurement unit (e.g., "г", "мл")
+    variants: Optional[Any] = None  # Variants with prices: [{"size": "10 шт", "price": 100}, ...]
 
 class CategoryBase(BaseModel):
     name: str
@@ -1021,6 +1105,9 @@ class CategoryUpdate(CategoryBase):
 
 class Banner(BaseModel):
     image_url: str
+
+class DeleteBatchRequest(BaseModel):
+    ids: List[int]
 
 @app.get("/products", response_model=List[Product])
 async def get_products():
@@ -1067,10 +1154,41 @@ async def get_products():
             # Safe Unit
             if not item.get("unit"):
                 item["unit"] = "шт"
+            
+            # Parse variants JSON if exists - CRITICAL: Always include variants field
+            variants_val = item.get("variants")
+            if variants_val and isinstance(variants_val, str):
+                try:
+                    parsed = json.loads(variants_val)
+                    item["variants"] = parsed if parsed else None
+                    print(f"✅ Product {item.get('id')} ({item.get('name')}): variants parsed = {parsed}")
+                except Exception as e:
+                    print(f"⚠️ Error parsing variants for product {item.get('id')}: {e}")
+                    item["variants"] = None
+            else:
+                # Keep original value (could be None, empty string, or already parsed)
+                item["variants"] = variants_val if variants_val else None
+                if variants_val:
+                    print(f"✅ Product {item.get('id')} ({item.get('name')}): variants (not string) = {variants_val}")
+                else:
+                    print(f"⚠️ Product {item.get('id')} ({item.get('name')}): variants is None/empty")
+
+            # CRITICAL: Ensure variants field is always present in the dict
+            if "variants" not in item:
+                item["variants"] = None
+                print(f"🔴 CRITICAL: Product {item.get('id')} missing variants field! Adding None.")
 
             results.append(item)
 
         conn.close()
+        
+        # Debug: Log first product to verify variants field
+        if results and len(results) > 0:
+            first_product = results[0]
+            print(f"🔍 DEBUG GET /products: First product has variants field: {'variants' in first_product}")
+            print(f"🔍 DEBUG GET /products: First product variants value: {first_product.get('variants')}")
+            print(f"🔍 DEBUG GET /products: First product variants type: {type(first_product.get('variants'))}")
+        
         return results
     except Exception as e:
         print(f"CRITICAL ERROR in GET /products: {e}")
@@ -1084,10 +1202,18 @@ async def create_product(product: ProductCreate):
         # Handle pack_sizes: convert array to comma-separated string if needed
         pack_sizes_str = ", ".join(str(x) for x in product.pack_sizes) if isinstance(product.pack_sizes, list) else (product.pack_sizes or "")
         
+        # Handle variants: convert list to JSON string if needed
+        variants_str = ""
+        if product.variants:
+            if isinstance(product.variants, list):
+                variants_str = json.dumps(product.variants, ensure_ascii=False)
+            elif isinstance(product.variants, str):
+                variants_str = product.variants
+        
         cursor.execute('''
-            INSERT INTO products (name, price, description, category, image, composition, weight, pack_sizes, old_price, unit) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (product.name, product.price, product.description, product.category, product.image, product.composition, product.weight, pack_sizes_str, product.old_price, product.unit))
+            INSERT INTO products (name, price, description, category, image, composition, weight, pack_sizes, old_price, unit, variants) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (product.name, product.price, product.description, product.category, product.image, product.composition, product.weight, pack_sizes_str, product.old_price, product.unit, variants_str))
         conn.commit()
         product_id = cursor.lastrowid
         conn.close()
@@ -1122,6 +1248,12 @@ async def update_product(product_id: int, product: ProductUpdate):
     except Exception:
         pass
     
+    try:
+        cursor.execute("ALTER TABLE products ADD COLUMN variants TEXT")
+        conn.commit()
+    except Exception:
+        pass
+    
     # 2. Prepare other fields
     unit_val = product.unit if product.unit else "шт"
     old_price_val = product.old_price
@@ -1129,13 +1261,21 @@ async def update_product(product_id: int, product: ProductUpdate):
     # Logic to ensure string format before binding
     safe_pack_sizes = ", ".join(str(x) for x in product.pack_sizes) if isinstance(product.pack_sizes, list) else str(product.pack_sizes or "")
     
-    print(f"DEBUG UPDATE: ID={product_id}, Unit={unit_val}, OldPrice={old_price_val}, Packs={safe_pack_sizes}")
+    # Handle variants: convert list to JSON string if needed
+    variants_str = ""
+    if product.variants:
+        if isinstance(product.variants, list):
+            variants_str = json.dumps(product.variants, ensure_ascii=False)
+        elif isinstance(product.variants, str):
+            variants_str = product.variants
+    
+    print(f"DEBUG UPDATE: ID={product_id}, Unit={unit_val}, OldPrice={old_price_val}, Packs={safe_pack_sizes}, Variants={variants_str}")
 
     try:
         # 3. Execute SQL with EXPLICIT fields
         cursor.execute("""
             UPDATE products 
-            SET name=?, price=?, description=?, category=?, image=?, composition=?, weight=?, pack_sizes=?, old_price=?, unit=? 
+            SET name=?, price=?, description=?, category=?, image=?, composition=?, weight=?, pack_sizes=?, old_price=?, unit=?, variants=? 
             WHERE id=?
         """, (
             product.name, 
@@ -1147,7 +1287,8 @@ async def update_product(product_id: int, product: ProductUpdate):
             product.weight, 
             safe_pack_sizes,  # <--- Explicitly use the converted string variable
             old_price_val, 
-            unit_val, 
+            unit_val,
+            variants_str,
             product_id
         ))
         conn.commit()
@@ -1355,6 +1496,165 @@ async def update_order_status(order_id: int, request: Request):
         print(f"Error updating order status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/orders/{order_id}")
+async def delete_order(order_id: int):
+    """Delete an order by ID"""
+    import sqlite3
+    
+    try:
+        conn = sqlite3.connect('shop.db')
+        cursor = conn.cursor()
+        
+        # Check if order exists
+        cursor.execute("SELECT id FROM orders WHERE id = ?", (order_id,))
+        order = cursor.fetchone()
+        
+        if not order:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Order with ID {order_id} not found")
+        
+        # Delete the order
+        cursor.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+        conn.commit()
+        conn.close()
+        
+        return {"message": f"Order {order_id} deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        if 'conn' in locals():
+            conn.close()
+        print(f"Error deleting order: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/orders/export")
+async def export_orders_to_excel():
+    """Export all orders to Excel file"""
+    import sqlite3
+    import json
+    
+    try:
+        conn = sqlite3.connect('shop.db')
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Get all orders
+        cursor.execute("SELECT * FROM orders ORDER BY id DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        if not rows:
+            raise HTTPException(status_code=404, detail="No orders found")
+        
+        # Convert rows to list of dictionaries
+        orders_data = []
+        for row in rows:
+            order_dict = dict(row)
+            # Parse items JSON if it exists
+            if order_dict.get('items'):
+                try:
+                    order_dict['items'] = json.loads(order_dict['items'])
+                except:
+                    order_dict['items'] = []
+            orders_data.append(order_dict)
+        
+        # Create DataFrame
+        df = pd.DataFrame(orders_data)
+        
+        # Format items column for Excel display
+        if 'items' in df.columns:
+            def format_items_for_excel(items):
+                """Format items list as readable string with variant_info support"""
+                if not items:
+                    return ""
+                if isinstance(items, str):
+                    try:
+                        items = json.loads(items)
+                    except:
+                        return items
+                
+                if not isinstance(items, list):
+                    return str(items)
+                
+                formatted_items = []
+                for item in items:
+                    if isinstance(item, dict):
+                        name = item.get('name', 'Товар')
+                        quantity = item.get('quantity', 1)
+                        variant_info = item.get('variant_info')
+                        
+                        if variant_info:
+                            # Format: "Название (вариант) x количество"
+                            formatted_items.append(f"{name} ({variant_info}) x {quantity}")
+                        else:
+                            # Format: "Название x количество"
+                            formatted_items.append(f"{name} x {quantity}")
+                    else:
+                        formatted_items.append(str(item))
+                
+                return ", ".join(formatted_items)
+            
+            # Convert items to formatted string representation for Excel
+            df['items'] = df['items'].apply(format_items_for_excel)
+        
+        # Create Excel file in memory
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Orders')
+        
+        output.seek(0)
+        
+        # Return file as StreamingResponse
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": "attachment; filename=orders.xlsx"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        if 'conn' in locals():
+            conn.close()
+        print(f"Error exporting orders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/orders/delete-batch")
+async def delete_orders_batch(request: DeleteBatchRequest):
+    """Delete multiple orders by IDs"""
+    import sqlite3
+    
+    if not request.ids or len(request.ids) == 0:
+        raise HTTPException(status_code=400, detail="No order IDs provided")
+    
+    try:
+        conn = sqlite3.connect('shop.db')
+        cursor = conn.cursor()
+        
+        # Create placeholders for IN clause
+        placeholders = ','.join('?' * len(request.ids))
+        
+        # Delete orders
+        cursor.execute(f"DELETE FROM orders WHERE id IN ({placeholders})", request.ids)
+        deleted_count = cursor.rowcount
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            "message": f"Successfully deleted {deleted_count} order(s)",
+            "deleted_count": deleted_count
+        }
+        
+    except Exception as e:
+        if 'conn' in locals():
+            conn.close()
+        print(f"Error deleting orders batch: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/create_order")
 async def create_order(order_data: OrderRequest):
     import sqlite3, json, os, httpx
@@ -1459,6 +1759,157 @@ async def create_order(order_data: OrderRequest):
     except Exception as e:
         print(f"🔥 ОШИБКА: {e}")
         return {"error": str(e)}
+
+# --- CHAT ENDPOINT WITH GPT ---
+class ChatRequest(BaseModel):
+    messages: List[dict]
+
+@app.post("/chat")
+async def chat_with_gpt(request: ChatRequest):
+    try:
+        # Получаем API ключ OpenAI из переменных окружения
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            return {"error": "OpenAI API key not found in environment variables"}
+        
+        # Загружаем список товаров
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, price, description, category, unit FROM products")
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # Формируем список товаров для промпта
+        products_list = []
+        for row in rows:
+            product = dict(row)
+            # Формируем краткое описание товара
+            product_info = {
+                "id": product.get("id"),
+                "name": product.get("name", ""),
+                "price": product.get("price", 0),
+                "description": product.get("description", "")[:200],  # Ограничиваем длину
+                "category": product.get("category", ""),
+                "unit": product.get("unit", "шт")
+            }
+            products_list.append(product_info)
+        
+        # Формируем системный промпт
+        products_json = json.dumps(products_list, ensure_ascii=False, indent=2)
+        system_prompt = f"""Ты — вежливый продавец-консультант интернет-магазина витаминов и БАДов. 
+Твоя цель — помочь клиенту выбрать подходящий товар из списка.
+
+Список доступных товаров:
+{products_json}
+
+Инструкции:
+1. Внимательно слушай запрос клиента.
+2. Если товар подходит под запрос, порекомендуй его (укажи название и почему он подходит).
+3. Можешь рекомендовать несколько товаров, если они подходят.
+4. Отвечай коротко, дружелюбно и продающе (но не навязчиво).
+5. Используй украинский язык.
+6. В конце ответа обязательно верни JSON в формате: {{ "reply": "Твой ответ клиенту", "recommended_ids": [id1, id2, ...] }}
+   - "reply" — твой текстовый ответ клиенту
+   - "recommended_ids" — массив ID рекомендованных товаров (может быть пустым, если ничего не подходит)
+
+ВАЖНО: Всегда завершай ответ JSON-объектом с полями "reply" и "recommended_ids"."""
+
+        # Инициализируем клиент OpenAI
+        client = OpenAI(api_key=openai_api_key)
+        
+        # Формируем историю сообщений для GPT
+        messages_for_gpt = [
+            {"role": "system", "content": system_prompt}
+        ]
+        
+        # Добавляем историю диалога (последние 10 сообщений для контекста)
+        recent_messages = request.messages[-10:] if len(request.messages) > 10 else request.messages
+        for msg in recent_messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", msg.get("text", ""))
+            if role in ["user", "assistant"]:
+                messages_for_gpt.append({"role": role, "content": content})
+        
+        # Делаем запрос к GPT
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Используем более дешевую модель
+            messages=messages_for_gpt,
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        # Получаем ответ от GPT
+        gpt_response = response.choices[0].message.content
+        
+        # Пытаемся извлечь JSON из ответа
+        reply_text = gpt_response
+        recommended_ids = []
+        
+        # Ищем JSON в ответе (может быть в конце или в отдельной строке)
+        try:
+            # Пытаемся найти JSON объект в ответе
+            json_start = gpt_response.rfind("{")
+            json_end = gpt_response.rfind("}") + 1
+            if json_start != -1 and json_end > json_start:
+                json_str = gpt_response[json_start:json_end]
+                parsed_json = json.loads(json_str)
+                if "reply" in parsed_json:
+                    reply_text = parsed_json["reply"]
+                if "recommended_ids" in parsed_json:
+                    recommended_ids = parsed_json["recommended_ids"]
+        except Exception as e:
+            print(f"⚠️ Не удалось распарсить JSON из ответа GPT: {e}")
+            # Если не удалось распарсить, используем весь ответ как текст
+        
+        # Получаем полные объекты рекомендованных товаров
+        recommended_products = []
+        if recommended_ids:
+            conn = get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            placeholders = ",".join("?" * len(recommended_ids))
+            cursor.execute(f"SELECT * FROM products WHERE id IN ({placeholders})", recommended_ids)
+            rows = cursor.fetchall()
+            conn.close()
+            
+            for row in rows:
+                item = dict(row)
+                # Парсим variants если есть
+                variants_val = item.get("variants")
+                if variants_val and isinstance(variants_val, str):
+                    try:
+                        item["variants"] = json.loads(variants_val)
+                    except:
+                        item["variants"] = None
+                else:
+                    item["variants"] = variants_val if variants_val else None
+                
+                # Обрабатываем изображения
+                image_value = item.get("image") or ""
+                picture_value = item.get("picture") or ""
+                image_url_value = item.get("image_url") or ""
+                if not image_url_value:
+                    item["image_url"] = image_value
+                if not picture_value and item.get("image_url"):
+                    item["picture"] = item["image_url"]
+                elif not picture_value and image_value:
+                    item["picture"] = image_value
+                    if not item.get("image_url"):
+                        item["image_url"] = image_value
+                
+                recommended_products.append(item)
+        
+        return {
+            "text": reply_text,
+            "products": recommended_products
+        }
+        
+    except Exception as e:
+        print(f"🔥 Ошибка в /chat: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Ошибка при обработке запроса: {str(e)}"}
 
 @app.get("/ping")
 def ping():

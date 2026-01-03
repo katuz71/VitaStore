@@ -141,7 +141,7 @@ export default function ProductScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
         {/* 1. Фото товара + Кнопки управления (Overlay) */}
         <View>
           <Image 
@@ -179,7 +179,7 @@ export default function ProductScreen() {
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 15 }}>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: 26, fontWeight: 'bold', marginBottom: 5 }}>{product.name}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                 {currentOldPrice && (
                   <Text style={{ 
                     fontSize: 18, 
@@ -196,6 +196,53 @@ export default function ProductScreen() {
                 }}>
                   {formatPrice(currentPrice)}
                 </Text>
+              </View>
+              
+              {/* Кнопки рядом с ценой */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                {/* Селектор количества (уменьшенный) */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 10, padding: 3 }}>
+                  <TouchableOpacity onPress={() => setQuantity(Math.max(1, quantity - 1))} style={{ padding: 6 }}>
+                    <Ionicons name="remove" size={16} color="black" />
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 14, fontWeight: 'bold', marginHorizontal: 8, minWidth: 30, textAlign: 'center' }}>
+                    {quantity} {product.unit || 'шт'}
+                  </Text>
+                  <TouchableOpacity onPress={() => setQuantity(quantity + 1)} style={{ padding: 6 }}>
+                    <Ionicons name="add" size={16} color="black" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Кнопка "У кошик" (компактная) */}
+                <TouchableOpacity 
+                  onPress={() => {
+                    // Если есть вариант, используем его данные, иначе базовые
+                    if (activeVariant) {
+                      addToCart(product, quantity, activeVariant.size, product.unit || 'шт', activeVariant.price);
+                    } else {
+                      addToCart(product, quantity, product.weight || product.unit || 'шт', product.unit || 'шт', currentPrice);
+                    }
+                    Vibration.vibrate(10);
+                    showToast('Товар додано в кошик');
+                    setTimeout(() => {
+                      router.back();
+                    }, 1500);
+                  }}
+                  style={{ 
+                    flex: 1, 
+                    backgroundColor: 'black', 
+                    borderRadius: 10, 
+                    paddingVertical: 10, 
+                    paddingHorizontal: 12,
+                    alignItems: 'center',
+                    maxWidth: 200
+                  }}
+                >
+                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 14 }}>
+                    <Text>У кошик • </Text>
+                    <Text>{formatPrice(currentPrice * quantity)}</Text>
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
             {product.rating && (
@@ -289,54 +336,95 @@ export default function ProductScreen() {
           <Text style={{ color: '#555', lineHeight: 22, fontSize: 15, marginBottom: 30, minHeight: 80 }}>
             {tab === 'desc' ? (product.description || 'Опис для цього товару поки відсутній.') : tab === 'ingr' ? (product.composition || 'Склад не вказано.') : (product.usage || 'Спосіб прийому не вказано.')}
           </Text>
+
+          {/* 6. Похожие товары */}
+          {(() => {
+            // Фильтруем товары той же категории, исключая текущий товар
+            const similarProducts = products.filter((p: any) => 
+              p.category === product.category && 
+              p.id !== product.id
+            ).slice(0, 10); // Ограничиваем до 10 товаров
+
+            if (similarProducts.length === 0) return null;
+
+            return (
+              <View style={{ marginTop: 20, marginBottom: 20 }}>
+                <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 15, paddingHorizontal: 20 }}>
+                  Схожі товари
+                </Text>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 20 }}
+                >
+                  {similarProducts.map((item: any, idx: number) => (
+                    <TouchableOpacity
+                      key={item.id || idx}
+                      onPress={() => router.push(`/product/${item.id}`)}
+                      style={{ 
+                        width: 140, 
+                        marginRight: 15,
+                        backgroundColor: 'white',
+                        borderRadius: 12,
+                        overflow: 'hidden',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 4,
+                        elevation: 3,
+                      }}
+                    >
+                      <Image 
+                        source={{ uri: getImageUrl(item.image || item.image_url || item.picture) }} 
+                        style={{ 
+                          width: '100%', 
+                          height: 140, 
+                          borderRadius: 12,
+                          backgroundColor: '#f0f0f0',
+                          marginBottom: 8
+                        }}
+                        resizeMode="cover"
+                      />
+                      <View style={{ padding: 10 }}>
+                        <Text 
+                          numberOfLines={2} 
+                          style={{ 
+                            fontSize: 13, 
+                            fontWeight: '600', 
+                            marginBottom: 6,
+                            minHeight: 36
+                          }}
+                        >
+                          {item.name}
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          {item.old_price && item.old_price > item.price && (
+                            <Text style={{ 
+                              textDecorationLine: 'line-through', 
+                              color: '#999', 
+                              fontSize: 11 
+                            }}>
+                              {formatPrice(item.old_price)}
+                            </Text>
+                          )}
+                          <Text style={{ 
+                            fontSize: 15, 
+                            fontWeight: 'bold', 
+                            color: item.old_price && item.old_price > item.price ? '#e74c3c' : '#000'
+                          }}>
+                            {formatPrice(item.price)}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            );
+          })()}
         </View>
       </ScrollView>
 
-      {/* 6. ЗАКРЕПЛЕННЫЙ ФУТЕР */}
-      <View style={{ 
-        position: 'absolute', bottom: 0, left: 0, right: 0,
-        padding: 20, 
-        borderTopWidth: 1, borderTopColor: '#f0f0f0', backgroundColor: 'white',
-        paddingBottom: 30
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 12, padding: 5, marginRight: 15 }}>
-            <TouchableOpacity onPress={() => setQuantity(Math.max(1, quantity - 1))} style={{ padding: 10 }}>
-              <Ionicons name="remove" size={20} color="black" />
-            </TouchableOpacity>
-            <Text style={{ fontSize: 16, fontWeight: 'bold', marginHorizontal: 10 }}>
-              <Text>{quantity} </Text>
-              <Text>{product.unit || 'шт'}</Text>
-            </Text>
-            <TouchableOpacity onPress={() => setQuantity(quantity + 1)} style={{ padding: 10 }}>
-              <Ionicons name="add" size={20} color="black" />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity 
-            onPress={() => {
-              // Если есть вариант, используем его данные, иначе базовые
-              if (activeVariant) {
-                addToCart(product, quantity, activeVariant.size, product.unit || 'шт', activeVariant.price);
-              } else {
-                addToCart(product, quantity, product.weight || product.unit || 'шт', product.unit || 'шт', currentPrice);
-              }
-              Vibration.vibrate(10); // Очень короткий "тик" как при добавлении в избранное
-              showToast('Товар додано в кошик');
-              // Задержка перед возвратом, чтобы пользователь увидел toast (увеличено до 1500ms)
-              setTimeout(() => {
-                router.back();
-              }, 1500);
-            }}
-            style={{ flex: 1, backgroundColor: 'black', borderRadius: 14, paddingVertical: 16, alignItems: 'center' }}
-          >
-            <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>
-              <Text>У кошик • </Text>
-              <Text>{formatPrice(currentPrice * quantity)}</Text>
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
 
       {/* Toast уведомление - рендерится поверх всего контента */}
       {toastVisible && (

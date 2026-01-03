@@ -1,11 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, Animated, ActivityIndicator, Dimensions, FlatList, Image, ImageBackground, KeyboardAvoidingView, Modal, Platform, RefreshControl, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Dimensions, FlatList, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, SafeAreaView, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from "react-native";
 import Markdown from 'react-native-markdown-display';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useCart } from '../context/CartContext';
-import { useOrders } from '../context/OrdersContext';
 import { API_URL } from '../config/api';
+import { useCart } from '../context/CartContext';
+import { OrderItem, useOrders } from '../context/OrdersContext';
+import { getImageUrl } from '../utils/image';
+
+type Variant = {
+  size: string;
+  price: number;
+};
 
 type Product = {
   id: number;
@@ -26,16 +32,17 @@ type Product = {
   pack_sizes?: string[];  // Changed to array to match backend
   old_price?: number;  // For discount logic
   unit?: string;  // Measurement unit (e.g., "шт", "г", "мл")
+  variants?: Variant[];  // Variants with different prices
 };
 
 // ProductImage component for handling images with error fallback
-const ProductImage = ({ uri }) => {
+const ProductImage = ({ uri }: { uri: string }) => {
   const [error, setError] = useState(false);
   
-  // Clean the URI
-  const validUri = uri ? uri.trim() : null;
+  // Clean the URI and get full URL
+  const validUri = uri ? getImageUrl(uri.trim()) : getImageUrl(null);
 
-  if (!validUri || error) {
+  if (error) {
     // Fallback UI (Placeholder)
     return (
       <View style={{ width: '100%', height: 150, backgroundColor: '#e1e1e1', borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 5 }}>
@@ -93,35 +100,101 @@ export default function Index() {
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [categories, setCategories] = useState(['Всі']);
-  const [banners, setBanners] = useState([]);
+  const [banners, setBanners] = useState<any[]>([]);
 
   // Загрузка данных с сервера
   const fetchData = async () => {
     try {
       // Fetch Categories
-      const catResponse = await fetch('http://192.168.1.161:8000/all-categories');
-      if (catResponse.ok) {
-        const catData = await catResponse.json();
-        let list = Array.isArray(catData) ? catData : (catData.categories || []);
-        const names = list.map(c => (typeof c === 'object' ? c.name : c));
-        setCategories(['Всі', ...names]);
+      const catUrl = `${API_URL}/all-categories`;
+      console.log("🔥 TRYING TO FETCH CATEGORIES:", catUrl);
+      try {
+        const catResponse = await fetch(catUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+        console.log("📦 Categories response status:", catResponse.status);
+        if (catResponse.ok) {
+          const catData = await catResponse.json();
+          let list = Array.isArray(catData) ? catData : (catData.categories || []);
+          const names = list.map((c: any) => (typeof c === 'object' ? c.name : c));
+          setCategories(['Всі', ...names]);
+          console.log("✅ Categories loaded:", names.length);
+        } else {
+          console.error("❌ Categories failed:", catResponse.status, catResponse.statusText);
+        }
+      } catch (catError) {
+        console.error("🔥 CATEGORIES FETCH ERROR:", catError);
+        const error = catError as any;
+        console.error("Error details:", {
+          message: error?.message,
+          name: error?.name,
+          stack: error?.stack
+        });
       }
 
       // Fetch Products
-      const prodRes = await fetch('http://192.168.1.161:8000/products');
-      if (prodRes.ok) {
-        // Products are managed by OrdersContext, so we trigger its fetch method
-        if (fetchProducts) {
-          await fetchProducts();
+      console.log("🚀 HARDCODED FETCH START");
+      const productsUrl = "http://192.168.1.161:8001/products";
+      console.log("🔥 TRYING TO FETCH PRODUCTS:", productsUrl);
+      try {
+        const prodRes = await fetch(productsUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+        console.log("📦 Products response status:", prodRes.status);
+        if (prodRes.ok) {
+          // Products are managed by OrdersContext, so we trigger its fetch method
+          if (fetchProducts) {
+            await fetchProducts();
+          }
+          console.log("✅ Products fetch triggered");
+        } else {
+          console.error("❌ Products failed:", prodRes.status, prodRes.statusText);
         }
+      } catch (prodError) {
+        console.error("🔥 PRODUCTS FETCH ERROR:", prodError);
+        const error = prodError as any;
+        console.error("Error details:", {
+          message: error?.message,
+          name: error?.name,
+          stack: error?.stack
+        });
       }
 
       // Fetch Banners
-      const bannerRes = await fetch('http://192.168.1.161:8000/banners');
-      if (bannerRes.ok) {
-        setBanners(await bannerRes.json());
+      const bannersUrl = `${API_URL}/banners`;
+      console.log("🔥 TRYING TO FETCH BANNERS:", bannersUrl);
+      try {
+        const bannerRes = await fetch(bannersUrl, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+          },
+        });
+        console.log("📦 Banners response status:", bannerRes.status);
+        if (bannerRes.ok) {
+          const bannersData = await bannerRes.json();
+          setBanners(bannersData);
+          console.log("✅ Banners loaded:", bannersData.length);
+        } else {
+          console.error("❌ Banners failed:", bannerRes.status, bannerRes.statusText);
+        }
+      } catch (bannerError) {
+        console.error("🔥 BANNERS FETCH ERROR:", bannerError);
+        const error = bannerError as any;
+        console.error("Error details:", {
+          message: error?.message,
+          name: error?.name,
+          stack: error?.stack
+        });
       }
     } catch (e) {
+      console.error("🔥 FETCH ERROR (GLOBAL):", e);
       console.error("Error fetching data:", e);
     }
   };
@@ -217,8 +290,8 @@ export default function Index() {
 
   const addToCart = (item: Product, size?: string) => {
     Vibration.vibrate(50); // Легкий отклик (50мс)
-    const packSize = size ? parseInt(size) : 30; // Конвертируем size в число или используем 30 по умолчанию
-    addItem(item, packSize);
+    const packSize = size ? String(parseInt(size)) : '30'; // Конвертируем size в строку или используем '30' по умолчанию
+    addItem(item, 1, packSize);
     showToast('Товар додано в кошик');
   };
 
@@ -233,10 +306,14 @@ export default function Index() {
   };
 
   const removeFromCart = (index: number) => {
-    const newCart = cart.filter((_, i) => i !== index);
-    setCart(newCart);
-    if (newCart.length === 0) {
-      setCartModalVisible(false);
+    if (index >= 0 && index < cart.length) {
+      const itemToRemove = cart[index];
+      const itemPackSize = (itemToRemove as any).packSize || (itemToRemove as any).size || '30';
+      const compositeId = `${itemToRemove.id}-${String(itemPackSize)}`;
+      removeItem(compositeId);
+      if (cart.length <= 1) {
+        setCartModalVisible(false);
+      }
     }
   };
 
@@ -251,7 +328,7 @@ export default function Index() {
     }
   };
 
-  const API_URL = 'http://192.168.1.161:8000/chat';
+  const CHAT_API_URL = 'http://192.168.1.161:8001/chat';
 
   const sendMessage = async () => {
     if (!inputMessage.trim()) return;
@@ -273,7 +350,7 @@ export default function Index() {
 
     // Call real API
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(CHAT_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -370,10 +447,7 @@ export default function Index() {
     return (
       <TouchableOpacity 
         onPress={() => {
-          setSelectedProduct(item);
-          setSelectedSize(null);
-          setQuantity(1);
-          setModalVisible(true);
+          router.push(`/product/${item.id}`);
         }}
         activeOpacity={0.8}
         style={{ 
@@ -391,7 +465,7 @@ export default function Index() {
         }}
       >
         <View style={{ marginBottom: 5, borderRadius: 8, overflow: 'hidden', backgroundColor: '#f5f5f5', justifyContent: 'center', alignItems: 'center' }}>
-          <ProductImage uri={item.picture} />
+          <ProductImage uri={item.picture || item.image || item.image_url || ''} />
           {safeBadge && (
             <View style={{ position: 'absolute', top: 5, left: 5, backgroundColor: 'black', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
               <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>{safeBadge}</Text>
@@ -514,7 +588,7 @@ export default function Index() {
             {banners.map((b) => (
               <Image 
                 key={b.id} 
-                source={{ uri: b.image_url }} 
+                source={{ uri: getImageUrl(b.image_url) }} 
                 style={{ 
                   width: CARD_WIDTH,
                   height: 220, 
@@ -651,10 +725,10 @@ export default function Index() {
               <View style={styles.cartItem}>
                 <View style={styles.cartItemInfo}>
                   <Text style={styles.cartItemName}>{item.name}</Text>
-                  {item.size && (
+                  {((item as any).packSize || (item as any).size) && (
                     <Text style={{ color: 'gray', fontSize: 12 }}>
                       <Text>Фасування: </Text>
-                      <Text>{item.size} </Text>
+                      <Text>{(item as any).packSize || (item as any).size} </Text>
                       <Text>{(item as any).unit || 'шт'}.</Text>
                     </Text>
                   )}
@@ -707,7 +781,7 @@ export default function Index() {
                   Alert.alert("Очистити кошик?", "Ви впевнені?", [
                     { text: "Ні", style: "cancel" },
                     { text: "Так", style: "destructive", onPress: () => {
-                      setCart([]);
+                      clearCart();
                       setCartModalVisible(false);
                     }}
                   ]);
@@ -724,7 +798,6 @@ export default function Index() {
           <FlatList
             data={cartItems}
             keyExtractor={(item, index) => `${item.id}-${index}`}
-            contentContainerStyle={{ padding: 20, flexGrow: 1 }}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 100 }}>
                 <View style={{ width: 100, height: 100, backgroundColor: '#f5f5f5', borderRadius: 50, alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
@@ -753,17 +826,11 @@ export default function Index() {
                       const product = (products || []).find(p => p.id === item.id);
                       if (product) {
                         setCartModalVisible(false);
-                        setTimeout(() => {
-                          setSelectedProduct(product);
-                          setSelectedSize(String((item as any).packSize || item.size || '30'));
-                          setQuantity(item.quantity || 1);
-                          setTab('desc');
-                          setModalVisible(true);
-                        }, 300);
+                        router.push(`/product/${product.id}`);
                       }
                     }}
                   >
-                    <Image source={{ uri: item.image?.startsWith('http') ? item.image : `${API_URL}${item.image}` }} style={{ width: 70, height: 70, borderRadius: 10, backgroundColor: '#f5f5f5' }} />
+                    <Image source={{ uri: getImageUrl(item.image) }} style={{ width: 70, height: 70, borderRadius: 10, backgroundColor: '#f5f5f5' }} />
                   </TouchableOpacity>
                   
                   {/* Инфо */}
@@ -805,8 +872,9 @@ export default function Index() {
                     <TouchableOpacity 
                       onPress={() => {
                         Vibration.vibrate(100);
-                        const itemPackSize = (item as any).packSize || parseInt(item.size || '30');
-                        removeItem(item.id, itemPackSize);
+                        const itemPackSize = (item as any).packSize || (item as any).size || '30';
+                        const compositeId = `${item.id}-${String(itemPackSize)}`;
+                        removeItem(compositeId);
                         if (cartItems.length <= 1) {
                           setCartModalVisible(false);
                         }
@@ -897,7 +965,7 @@ export default function Index() {
                 
                 {/* 1. Фото товара + Кнопки управления (Overlay) */}
                 <View>
-                  <Image source={{ uri: selectedProduct.image?.startsWith('http') ? selectedProduct.image : `${API_URL}${selectedProduct.image}` }} style={{ width: '100%', height: 350, resizeMode: 'cover' }} />
+                  <Image source={{ uri: getImageUrl(selectedProduct.image) }} style={{ width: '100%', height: 350, resizeMode: 'cover' }} />
                   
                   {/* Верхняя панель на фото */}
                   <View style={{ position: 'absolute', top: 20, left: 20, right: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1031,14 +1099,11 @@ export default function Index() {
                         <TouchableOpacity
                           key={item.id}
                           onPress={() => {
-                            setModalVisible(false);
-                            setTimeout(() => {
-                              setSelectedProduct(item); setSelectedSize(null); setQuantity(1); setTab('desc'); setModalVisible(true);
-                            }, 100);
+                            router.push(`/product/${item.id}`);
                           }}
                           style={{ width: 120, marginRight: 15 }}
                         >
-                          <Image source={{ uri: item.image?.startsWith('http') ? item.image : `${API_URL}${item.image}` }} style={{ width: 120, height: 120, borderRadius: 12, backgroundColor: '#f0f0f0' }} />
+                          <Image source={{ uri: getImageUrl(item.image) }} style={{ width: 120, height: 120, borderRadius: 12, backgroundColor: '#f0f0f0' }} />
                           <Text numberOfLines={1} style={{ marginTop: 8, fontWeight: '600', fontSize: 13 }}>{item.name}</Text>
                           <Text style={{ color: '#666', fontSize: 12 }}>{formatPrice(item.price)}</Text>
                         </TouchableOpacity>
@@ -1163,17 +1228,11 @@ export default function Index() {
                 <TouchableOpacity 
                   onPress={() => {
                     setFavModalVisible(false); // Сначала закрываем Избранное
-                    // Небольшая задержка для плавности смены окон
-                    setTimeout(() => {
-                      setSelectedProduct(item);
-                      setSelectedSize(null); // Сбрасываем выбор размера
-                      setQuantity(1);        // Сбрасываем количество
-                      setModalVisible(true); // Открываем карточку товара
-                    }, 100);
+                    router.push(`/product/${item.id}`);
                   }}
                   style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, backgroundColor: 'white', padding: 10, borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 }}
                 >
-                  <Image source={{ uri: item.image?.startsWith('http') ? item.image : `${API_URL}${item.image}` }} style={{ width: 60, height: 60, borderRadius: 8, marginRight: 15, backgroundColor: '#f0f0f0' }} />
+                  <Image source={{ uri: getImageUrl(item.image) }} style={{ width: 60, height: 60, borderRadius: 8, marginRight: 15, backgroundColor: '#f0f0f0' }} />
                   
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: 'bold', fontSize: 16 }}>{item.name}</Text>
@@ -1310,17 +1369,31 @@ export default function Index() {
                     </View>
                   )}
 
-                  {/* Миниатюры товаров */}
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
-                    {item.items.map((prod, index) => (
-                      <View key={index} style={{ marginRight: 10, width: 60 }}>
-                        <Image source={{ uri: prod.image?.startsWith('http') ? prod.image : `${API_URL}${prod.image}` }} style={{ width: 60, height: 60, borderRadius: 10, backgroundColor: '#f0f0f0' }} />
-                        <View style={{ position: 'absolute', bottom: -5, right: -5, backgroundColor: 'black', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' }}>
-                          <Text style={{ color: 'white', fontSize: 10, fontWeight: 'bold' }}>{prod.quantity || 1}</Text>
+                  {/* Список товаров с названиями и вариантами */}
+                  <View style={{ marginBottom: 15 }}>
+                    {item.items.map((prod: OrderItem, index: number) => (
+                      <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingBottom: 10, borderBottomWidth: index < item.items.length - 1 ? 1 : 0, borderBottomColor: '#f0f0f0' }}>
+                        <Image 
+                          source={{ uri: getImageUrl(prod.image) }} 
+                          style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: '#f0f0f0', marginRight: 10 }} 
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: '#333', marginBottom: 2 }}>
+                            {prod.name}
+                            {prod.variant_info && (
+                              <Text style={{ color: '#666', fontWeight: '400' }}> ({prod.variant_info})</Text>
+                            )}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: '#888' }}>
+                            <Text>Кількість: </Text>
+                            <Text style={{ fontWeight: '600' }}>{prod.quantity || 1}</Text>
+                            <Text> • </Text>
+                            <Text style={{ fontWeight: '600' }}>{formatPrice((prod.price || 0) * (prod.quantity || 1))}</Text>
+                          </Text>
                         </View>
                       </View>
                     ))}
-                  </ScrollView>
+                  </View>
 
                   {/* Итого */}
                   <View style={{ borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1416,10 +1489,7 @@ export default function Index() {
                       const id = url.split('product://')[1];
                       const product = (products || []).find(p => p.id.toString() === id);
                       if (product) {
-                        setSelectedProduct(product);
-                        setSelectedSize(null);
-                        setQuantity(1);
-                        setModalVisible(true);
+                        router.push(`/product/${product.id}`);
                       }
                       return false; // Prevent default browser opening
                     }

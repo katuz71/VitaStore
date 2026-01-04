@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "my-shop",
-    "slug": "my-shop",
+    "name": "VitaStore",
+    "slug": "vitastore",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -17,6 +17,8 @@
       }
     },
     "android": {
+      "package": "com.dikoros.vitastore",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -49,6 +51,18 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "78ef142a-78b6-4a01-96a8-7a0083d7f513"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/78ef142a-78b6-4a01-96a8-7a0083d7f513"
     }
   }
 }

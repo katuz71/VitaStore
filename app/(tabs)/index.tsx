@@ -10,6 +10,7 @@ import { getImageUrl } from '../utils/image';
 import { checkServerHealth, getConnectionErrorMessage } from '../utils/serverCheck';
 import { FloatingChatButton } from '@/components/FloatingChatButton';
 import { loadFavorites, saveFavorites, toggleFavorite as toggleFavoriteUtil } from '../utils/favorites';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Variant = {
   size: string;
@@ -158,9 +159,26 @@ export default function Index() {
   const [banners, setBanners] = useState<any[]>([]);
   const [connectionError, setConnectionError] = useState(false);
 
-  // Загрузка баннеров (независимо от статуса сервера)
+  // Загрузка баннеров с кэшированием (Stale-While-Revalidate стратегия)
   const loadBanners = useCallback(async () => {
+    const CACHE_KEY = 'cached_banners';
+    
     try {
+      // STEP 1: Сначала загружаем из кэша (если есть) и показываем сразу
+      try {
+        const cachedData = await AsyncStorage.getItem(CACHE_KEY);
+        if (cachedData) {
+          const cachedBanners = JSON.parse(cachedData);
+          if (Array.isArray(cachedBanners) && cachedBanners.length > 0) {
+            setBanners(cachedBanners); // Показываем кэшированные баннеры сразу
+          }
+        }
+      } catch (cacheError) {
+        // Игнорируем ошибки кэша
+        console.error("Error reading cached banners:", cacheError);
+      }
+
+      // STEP 2: Затем загружаем свежие данные с API
       const bannersUrl = `${API_URL}/banners`;
       const controller2 = new AbortController();
       const timeout2 = setTimeout(() => controller2.abort(), 15000);
@@ -178,13 +196,19 @@ export default function Index() {
         const bannersData = await bannerRes.json();
         const bannersArray = Array.isArray(bannersData) ? bannersData : [];
         if (bannersArray.length > 0) {
+          // STEP 3: Обновляем состояние свежими данными
           setBanners(bannersArray);
+          
+          // STEP 4: Сохраняем в кэш для следующего раза
+          try {
+            await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(bannersArray));
+          } catch (saveError) {
+            console.error("Error saving banners to cache:", saveError);
+          }
         }
-        // Не очищаем баннеры, если запрос неудачен - оставляем предыдущие данные
       }
     } catch (bannerError: any) {
-      // Не очищаем баннеры при ошибке - оставляем предыдущие данные
-      // Только логируем ошибку
+      // Не очищаем баннеры при ошибке - оставляем кэшированные данные
       if (bannerError.name !== 'AbortError') {
         console.error("❌ Banner fetch error:", bannerError.message);
       }
@@ -267,6 +291,24 @@ export default function Index() {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  // Загрузка баннеров из кэша при монтировании (чтобы показать их сразу при старте)
+  useEffect(() => {
+    const loadCachedBanners = async () => {
+      try {
+        const cachedData = await AsyncStorage.getItem('cached_banners');
+        if (cachedData) {
+          const cachedBanners = JSON.parse(cachedData);
+          if (Array.isArray(cachedBanners) && cachedBanners.length > 0) {
+            setBanners(cachedBanners); // Показываем кэшированные баннеры сразу при старте
+          }
+        }
+      } catch (error) {
+        // Игнорируем ошибки кэша при первой загрузке
+      }
+    };
+    loadCachedBanners();
   }, []);
 
   // Загрузка избранного из AsyncStorage при монтировании и при фокусе экрана

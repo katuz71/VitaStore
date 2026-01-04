@@ -13,9 +13,6 @@ export default function Layout() {
           {/* Экран товара */}
           <Stack.Screen name="product/[id]" options={{ headerShown: false }} />
           
-          {/* Модальное окно (Корзина/Успех) */}
-          <Stack.Screen name="modal" options={{ presentation: 'modal', headerShown: false }} />
-          
           {/* Оформление заказа */}
           <Stack.Screen name="checkout" options={{ headerShown: false }} />
         </Stack>

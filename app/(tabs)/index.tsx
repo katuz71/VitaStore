@@ -158,6 +158,39 @@ export default function Index() {
   const [banners, setBanners] = useState<any[]>([]);
   const [connectionError, setConnectionError] = useState(false);
 
+  // Загрузка баннеров (независимо от статуса сервера)
+  const loadBanners = useCallback(async () => {
+    try {
+      const bannersUrl = `${API_URL}/banners`;
+      const controller2 = new AbortController();
+      const timeout2 = setTimeout(() => controller2.abort(), 15000);
+      
+      const bannerRes = await fetch(bannersUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+        signal: controller2.signal,
+      });
+      
+      clearTimeout(timeout2);
+      if (bannerRes.ok) {
+        const bannersData = await bannerRes.json();
+        const bannersArray = Array.isArray(bannersData) ? bannersData : [];
+        if (bannersArray.length > 0) {
+          setBanners(bannersArray);
+        }
+        // Не очищаем баннеры, если запрос неудачен - оставляем предыдущие данные
+      }
+    } catch (bannerError: any) {
+      // Не очищаем баннеры при ошибке - оставляем предыдущие данные
+      // Только логируем ошибку
+      if (bannerError.name !== 'AbortError') {
+        console.error("❌ Banner fetch error:", bannerError.message);
+      }
+    }
+  }, []);
+
   // Загрузка данных с сервера
   const fetchData = async () => {
     try {
@@ -168,6 +201,8 @@ export default function Index() {
         console.error("❌ Server is not available at", API_URL);
         console.error(getConnectionErrorMessage());
         setConnectionError(true);
+        // Все равно пытаемся загрузить баннеры
+        loadBanners();
         return;
       }
       console.log("✅ Server is available");
@@ -218,37 +253,7 @@ export default function Index() {
         await fetchProducts();
       }
 
-      // Fetch Banners (non-critical - failures are silently ignored)
-      // Загружаем баннеры независимо, даже если другие запросы упали
-      const loadBanners = async () => {
-        try {
-          const bannersUrl = `${API_URL}/banners`;
-          const controller2 = new AbortController();
-          const timeout2 = setTimeout(() => controller2.abort(), 15000); // Увеличен таймаут до 15 секунд
-          
-          const bannerRes = await fetch(bannersUrl, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-            },
-            signal: controller2.signal,
-          });
-          
-          clearTimeout(timeout2);
-          if (bannerRes.ok) {
-            const bannersData = await bannerRes.json();
-            const bannersArray = Array.isArray(bannersData) ? bannersData : [];
-            setBanners(bannersArray);
-          } else {
-            setBanners([]);
-          }
-        } catch (bannerError: any) {
-          // Игнорируем ошибки баннеров - они не критичны
-          setBanners([]);
-        }
-      };
-      
-      // Загружаем баннеры асинхронно, не блокируя основной поток
+      // Загружаем баннеры независимо от статуса других запросов
       loadBanners();
     } catch (e: any) {
       console.error("🔥 FETCH ERROR (GLOBAL):", e);
@@ -278,11 +283,12 @@ export default function Index() {
     loadFavoritesData();
   }, [loadFavoritesData]);
 
-  // Обновление избранного при фокусе экрана (когда пользователь возвращается на главный экран)
+  // Обновление избранного и баннеров при фокусе экрана (когда пользователь возвращается на главный экран)
   useFocusEffect(
     useCallback(() => {
       loadFavoritesData();
-    }, [loadFavoritesData])
+      loadBanners(); // Перезагружаем баннеры при возврате на экран
+    }, [loadFavoritesData, loadBanners])
   );
 
   // Обработка параметра для открытия профиля после заказа

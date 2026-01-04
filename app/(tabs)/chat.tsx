@@ -173,6 +173,13 @@ export default function ChatScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f9f9f9' }}>
       {/* Header with Clear Button */}
       <View style={styles.header}>
+        <TouchableOpacity 
+          onPress={() => router.back()}
+          style={styles.closeButton}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close" size={24} color="#000" />
+        </TouchableOpacity>
         <Text style={styles.headerTitle}>Чат з експертом</Text>
         <TouchableOpacity 
           onPress={clearChat}
@@ -185,16 +192,17 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 20}
       >
         <FlatList
           ref={flatListRef}
           data={messages}
           renderItem={renderItem}
           keyExtractor={item => `msg-${item.id}`}
-          contentContainerStyle={{ padding: 15, paddingBottom: 20 }}
+          contentContainerStyle={{ padding: 15, paddingBottom: 100 }}
           style={{ flex: 1 }}
+          keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => {
             setTimeout(() => {
               flatListRef.current?.scrollToEnd({ animated: true });
@@ -356,7 +364,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 15,
-    paddingVertical: 12,
+    paddingVertical: 20,
+    paddingTop: 50,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
@@ -365,9 +374,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#000',
+    textAlign: 'center',
+    flex: 1,
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 8,
+    width: 40,
+    alignItems: 'flex-start',
   },
   clearButton: {
     padding: 8,
     borderRadius: 8,
+    width: 40,
+    alignItems: 'flex-end',
   },
 });

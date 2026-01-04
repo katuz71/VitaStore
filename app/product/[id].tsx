@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrdersContext';
 import { getImageUrl } from '../utils/image';
 import { Ionicons } from '@expo/vector-icons';
+import { FloatingChatButton } from '@/components/FloatingChatButton';
 
 export default function ProductScreen() {
   const { id } = useLocalSearchParams();
@@ -472,6 +473,7 @@ export default function ProductScreen() {
           </View>
         </Animated.View>
       )}
+      <FloatingChatButton />
     </SafeAreaView>
   );
 }

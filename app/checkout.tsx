@@ -19,6 +19,7 @@ import {
 import { API_URL } from './config/api';
 import { useCart } from './context/CartContext';
 import { OrderItem, useOrders } from './context/OrdersContext';
+import { FloatingChatButton } from '@/components/FloatingChatButton';
 
 interface City {
   Ref: string;
@@ -922,6 +923,7 @@ export default function CheckoutScreen() {
         </View>
       </Modal>
     </KeyboardAvoidingView>
+    <FloatingChatButton />
     </SafeAreaView>
   );
 }

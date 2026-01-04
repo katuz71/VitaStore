@@ -7,6 +7,7 @@ import { useCart } from '../context/CartContext';
 import { OrderItem, useOrders } from '../context/OrdersContext';
 import { getImageUrl } from '../utils/image';
 import { checkServerHealth, getConnectionErrorMessage } from '../utils/serverCheck';
+import { FloatingChatButton } from '@/components/FloatingChatButton';
 
 type Variant = {
   size: string;
@@ -243,7 +244,7 @@ export default function Index() {
   const [aiVisible, setAiVisible] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([
-    { id: 1, text: 'Привіт! Я VitaBot 🤖. Допомогти підібрати вітаміни?', sender: 'bot' }
+    { id: 1, text: 'Привіт! Я експерт із сили природи. Допоможу підібрати гриби, вітаміни чи трави для твого здоров\'я. Що шукаємо? 🌿🍄', sender: 'bot' }
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -1322,6 +1323,7 @@ export default function Index() {
               )}
             />
           )}
+          <FloatingChatButton />
         </SafeAreaView>
       </Modal>
       {/* PROFILE MODAL (Экран Профиля) */}
@@ -1481,6 +1483,7 @@ export default function Index() {
               )}
             />
           </View>
+          <FloatingChatButton />
         </SafeAreaView>
       </Modal>
       {/* SUCCESS ORDER MODAL */}
@@ -1543,7 +1546,7 @@ export default function Index() {
                   <Ionicons name="chatbubble-ellipses" size={24} color="#00bcd4" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: 'bold', fontSize: 17, color: '#000' }}>VitaBot AI 🤖</Text>
+                  <Text style={{ fontWeight: 'bold', fontSize: 17, color: '#000' }}>Експерт природи 🌿</Text>
                   <Text style={{ color: '#4CAF50', fontSize: 13, marginTop: 2 }}>Online • Готовий допомогти</Text>
                 </View>
               </View>
@@ -1777,29 +1780,8 @@ export default function Index() {
           </Text>
         </Animated.View>
       )}
-      {/* AI FLOAT BUTTON */}
-      <TouchableOpacity
-        onPress={() => setAiVisible(true)}
-        style={{
-          position: 'absolute',
-          bottom: 30,
-          right: 20,
-          width: 60,
-          height: 60,
-          backgroundColor: 'black',
-          borderRadius: 30,
-          alignItems: 'center',
-          justifyContent: 'center',
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 5,
-          elevation: 8,
-          zIndex: 999
-        }}
-      >
-        <Ionicons name="chatbubble-ellipses" size={30} color="white" />
-      </TouchableOpacity>
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
     </View>
   );
 }

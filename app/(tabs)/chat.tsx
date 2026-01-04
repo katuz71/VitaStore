@@ -31,13 +31,34 @@ const formatPrice = (price: number) => {
 };
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', text: 'Привіт! Я експерт із сили природи. Допоможу підібрати гриби, вітаміни чи трави для твого здоров\'я. Що шукаємо? 🌿🍄', sender: 'bot' }
-  ]);
+  // Initial welcome message constant
+  const INITIAL_WELCOME_MESSAGE: Message = {
+    id: '1',
+    text: 'Привіт! Я експерт із сили природи. Допоможу підібрати гриби, вітаміни чи трави для твого здоров\'я. Що шукаємо? 🌿🍄',
+    sender: 'bot'
+  };
+
+  const [messages, setMessages] = useState<Message[]>([INITIAL_WELCOME_MESSAGE]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
+
+  // Clear chat function
+  const clearChat = async () => {
+    try {
+      // Clear AsyncStorage if it exists (for future persistence)
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.removeItem('chat_messages').catch(() => {});
+    } catch (e) {
+      // AsyncStorage might not be installed, ignore
+    }
+    
+    // Reset messages to initial welcome message
+    setMessages([INITIAL_WELCOME_MESSAGE]);
+    setInputText('');
+    Vibration.vibrate(50);
+  };
 
   // Автоскролл вниз при новом сообщении
   useEffect(() => {
@@ -150,6 +171,18 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#f9f9f9' }}>
+      {/* Header with Clear Button */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Чат з експертом</Text>
+        <TouchableOpacity 
+          onPress={clearChat}
+          style={styles.clearButton}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="trash-outline" size={22} color="#666" />
+        </TouchableOpacity>
+      </View>
+
       <KeyboardAvoidingView 
         style={{ flex: 1 }} 
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -317,5 +350,24 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  clearButton: {
+    padding: 8,
+    borderRadius: 8,
   },
 });

@@ -205,7 +205,7 @@ export default function ProductScreen() {
                     <Ionicons name="remove" size={16} color="black" />
                   </TouchableOpacity>
                   <Text style={{ fontSize: 14, fontWeight: 'bold', marginHorizontal: 8, minWidth: 30, textAlign: 'center' }}>
-                    {quantity} {product.unit || 'шт'}
+                    {quantity}
                   </Text>
                   <TouchableOpacity onPress={() => setQuantity(quantity + 1)} style={{ padding: 6 }}>
                     <Ionicons name="add" size={16} color="black" />

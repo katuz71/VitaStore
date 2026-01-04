@@ -17,6 +17,11 @@ export const getImageUrl = (
   // Если путь пустой, возвращаем заглушку
   if (!path) return 'https://via.placeholder.com/300';
   
+  // Если это data URL (base64), возвращаем как есть
+  if (path.startsWith('data:')) {
+    return path;
+  }
+  
   // Если это внешний URL, возвращаем как есть
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path;

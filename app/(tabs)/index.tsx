@@ -36,6 +36,52 @@ type Product = {
   variants?: Variant[];  // Variants with different prices
 };
 
+// BannerImage component for handling banner images with error fallback
+const BannerImage = ({ uri, width, height }: { uri: string; width: number; height: number }) => {
+  const [error, setError] = useState(false);
+  
+  if (error) {
+    // Fallback UI (Placeholder)
+    return (
+      <View style={{
+        width,
+        height,
+        backgroundColor: '#f5f5f5',
+        borderRadius: 15,
+        marginRight: 10,
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <Ionicons name="image-outline" size={40} color="#ccc" />
+      </View>
+    );
+  }
+  
+  return (
+    <Image 
+      source={{ uri }} 
+      style={{ 
+        width,
+        height, 
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 15,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 15,
+        marginRight: 10,
+        backgroundColor: '#f5f5f5'
+      }} 
+      resizeMode="cover"
+      onError={() => {
+        console.error("❌ Banner image failed to load:", uri);
+        setError(true);
+      }}
+      onLoad={() => {
+        // Image loaded successfully
+      }}
+    />
+  );
+};
+
 // ProductImage component for handling images with error fallback
 const ProductImage = ({ uri }: { uri: string }) => {
   const [error, setError] = useState(false);
@@ -90,7 +136,6 @@ export default function Index() {
   // Используем cartItems из контекста вместо локального cart
   const cart = cartItems; // Алиас для совместимости со старым кодом
   const [modalVisible, setModalVisible] = useState(false);
-  const [cartModalVisible, setCartModalVisible] = useState(false);
   const [successModalVisible, setSuccessModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchVisible, setIsSearchVisible] = useState(false);
@@ -99,7 +144,6 @@ export default function Index() {
   const [sortType, setSortType] = useState<'popular' | 'asc' | 'desc'>('popular');
   const [favorites, setFavorites] = useState<Product[]>([]);
   const [favModalVisible, setFavModalVisible] = useState(false);
-  const [profileModalVisible, setProfileModalVisible] = useState(false);
   const [successVisible, setSuccessVisible] = useState(false);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [bannerIndex, setBannerIndex] = useState(0);
@@ -172,42 +216,38 @@ export default function Index() {
         await fetchProducts();
       }
 
-      // Fetch Banners
-      const bannersUrl = `${API_URL}/banners`;
-      console.log("🔥 TRYING TO FETCH BANNERS:", bannersUrl);
-      try {
-        const controller2 = new AbortController();
-        const timeout2 = setTimeout(() => controller2.abort(), 10000);
-        
-        const bannerRes = await fetch(bannersUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-          },
-          signal: controller2.signal,
-        });
-        
-        clearTimeout(timeout2);
-        console.log("📦 Banners response status:", bannerRes.status);
-        if (bannerRes.ok) {
-          const bannersData = await bannerRes.json();
-          setBanners(bannersData);
-          console.log("✅ Banners loaded:", bannersData.length);
-        } else {
-          console.error("❌ Banners failed:", bannerRes.status, bannerRes.statusText);
-        }
-      } catch (bannerError: any) {
-        console.error("🔥 BANNERS FETCH ERROR:", bannerError);
-        if (bannerError.name === 'AbortError') {
-          console.error("⏱️ Banners request timeout");
-        } else {
-          console.error("Error details:", {
-            message: bannerError?.message,
-            name: bannerError?.name,
-            stack: bannerError?.stack
+      // Fetch Banners (non-critical - failures are silently ignored)
+      // Загружаем баннеры независимо, даже если другие запросы упали
+      const loadBanners = async () => {
+        try {
+          const bannersUrl = `${API_URL}/banners`;
+          const controller2 = new AbortController();
+          const timeout2 = setTimeout(() => controller2.abort(), 15000); // Увеличен таймаут до 15 секунд
+          
+          const bannerRes = await fetch(bannersUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+            },
+            signal: controller2.signal,
           });
+          
+          clearTimeout(timeout2);
+          if (bannerRes.ok) {
+            const bannersData = await bannerRes.json();
+            const bannersArray = Array.isArray(bannersData) ? bannersData : [];
+            setBanners(bannersArray);
+          } else {
+            setBanners([]);
+          }
+        } catch (bannerError: any) {
+          // Игнорируем ошибки баннеров - они не критичны
+          setBanners([]);
         }
-      }
+      };
+      
+      // Загружаем баннеры асинхронно, не блокируя основной поток
+      loadBanners();
     } catch (e: any) {
       console.error("🔥 FETCH ERROR (GLOBAL):", e);
       console.error("Error fetching data:", e);
@@ -227,7 +267,7 @@ export default function Index() {
     if (params.showProfile === 'true') {
       // Небольшая задержка для плавного перехода
       const timer = setTimeout(() => {
-        setProfileModalVisible(true);
+        router.push('/(tabs)/profile');
       }, 300);
       return () => clearTimeout(timer);
     }
@@ -324,17 +364,6 @@ export default function Index() {
     }
   };
 
-  const removeFromCart = (index: number) => {
-    if (index >= 0 && index < cart.length) {
-      const itemToRemove = cart[index];
-      const itemPackSize = (itemToRemove as any).packSize || (itemToRemove as any).size || '30';
-      const compositeId = `${itemToRemove.id}-${String(itemPackSize)}`;
-      removeItem(compositeId);
-      if (cart.length <= 1) {
-        setCartModalVisible(false);
-      }
-    }
-  };
 
 
   const onShare = async (product: Product) => {
@@ -582,7 +611,7 @@ export default function Index() {
           </TouchableOpacity>
           <TouchableOpacity 
             style={{ marginRight: 12, position: 'relative' }} 
-            onPress={() => setCartModalVisible(true)}
+            onPress={() => router.push('/(tabs)/cart')}
           >
             <Ionicons name="cart" size={26} color="black" />
             {cart.length > 0 && (
@@ -607,12 +636,6 @@ export default function Index() {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity 
-            onPress={() => setProfileModalVisible(true)}
-            style={{ position: 'relative' }}
-          >
-            <Ionicons name="person-circle-outline" size={24} color="black" />
-          </TouchableOpacity>
         </View>
       </View>
       {/* BANNERS */}
@@ -630,27 +653,24 @@ export default function Index() {
             snapToInterval={CARD_WIDTH + 10}
             decelerationRate="fast"
           >
-            {banners.map((b) => (
-              <Image 
-                key={b.id} 
-                source={{ uri: getImageUrl(b.image_url, {
-                  width: CARD_WIDTH,
-                  height: 220,
-                  quality: 85,
-                  format: 'webp'
-                }) }} 
-                style={{ 
-                  width: CARD_WIDTH,
-                  height: 220, 
-                  borderTopLeftRadius: 0,
-                  borderTopRightRadius: 15,
-                  borderBottomLeftRadius: 0,
-                  borderBottomRightRadius: 15,
-                  marginRight: 10
-                }} 
-                resizeMode="cover"
-              />
-            ))}
+            {banners.map((b) => {
+              // Обеспечиваем правильное формирование URL для баннера
+              // Используем getImageUrl для обработки относительных путей
+              const imageUrl = b.image_url || b.image || b.picture;
+              if (!imageUrl) {
+                return null;
+              }
+              const fullImageUrl = getImageUrl(imageUrl);
+              
+              return (
+                <BannerImage 
+                  key={b.id}
+                  uri={fullImageUrl}
+                  width={CARD_WIDTH}
+                  height={220}
+                />
+              );
+            })}
           </ScrollView>
         );
       })()}
@@ -785,249 +805,6 @@ export default function Index() {
           }
         />
       )}
-      <Modal animationType="slide" visible={modalVisible}>
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Ваш кошик</Text>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text style={styles.closeButton}>Закрити</Text>
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={cartItems}
-            keyExtractor={(item, index) => `${item.id}-${index}`}
-            renderItem={({ item, index }) => (
-              <View style={styles.cartItem}>
-                <View style={styles.cartItemInfo}>
-                  <Text style={styles.cartItemName}>{item.name}</Text>
-                  {((item as any).packSize || (item as any).size) && (
-                    <Text style={{ color: 'gray', fontSize: 12 }}>
-                      <Text>Фасування: </Text>
-                      <Text>{(item as any).packSize || (item as any).size} </Text>
-                      <Text>{(item as any).unit || 'шт'}.</Text>
-                    </Text>
-                  )}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    {(item as any).old_price && (item as any).old_price > item.price && (
-                      <Text style={{ textDecorationLine: 'line-through', color: 'gray', fontSize: 12 }}>
-                        {formatPrice((item as any).old_price)}
-                      </Text>
-                    )}
-                    <Text style={styles.cartItemPrice}>{formatPrice(item.price)}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity onPress={() => removeFromCart(index)}>
-                  <Text style={styles.removeButton}>Видалити</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            contentContainerStyle={styles.cartListContent}
-          />
-          <View style={styles.totalContainer}>
-            <Text style={styles.totalText}>
-              <Text>Разом: </Text>
-              <Text>{formatPrice(totalAmount)}</Text>
-            </Text>
-            <TouchableOpacity
-              style={[styles.checkoutButton, cartItems.length === 0 && styles.checkoutButtonDisabled]}
-              onPress={() => {
-                if (cartItems.length === 0) {
-                  Alert.alert('Кошик порожній', 'Додайте товари до кошика');
-                  return;
-                }
-                setCartModalVisible(false);
-                router.push('/checkout');
-              }}
-              disabled={cartItems.length === 0}
-            >
-              <Text style={styles.checkoutButtonText}>Оформити замовлення</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
-      <Modal animationType="slide" visible={cartModalVisible}>
-        <SafeAreaView style={styles.cartModalContainer}>
-          <View style={{ padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}>
-            <Text style={{ fontSize: 24, fontWeight: 'bold' }}>Кошик</Text>
-            
-            {cart.length > 0 && (
-              <TouchableOpacity 
-                onPress={() => {
-                  Alert.alert("Очистити кошик?", "Ви впевнені?", [
-                    { text: "Ні", style: "cancel" },
-                    { text: "Так", style: "destructive", onPress: () => {
-                      clearCart();
-                      setCartModalVisible(false);
-                    }}
-                  ]);
-                }}
-              >
-                <Text style={{ color: 'red', fontSize: 14, fontWeight: '600' }}>Очистити все</Text>
-              </TouchableOpacity>
-            )}
-            
-            <TouchableOpacity onPress={() => setCartModalVisible(false)} style={{ marginLeft: 15 }}>
-              <Ionicons name="close" size={28} color="black" />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={cartItems}
-            keyExtractor={(item, index) => `${item.id}-${index}`}
-            ListEmptyComponent={
-              <View style={{ alignItems: 'center', justifyContent: 'center', marginTop: 100 }}>
-                <View style={{ width: 100, height: 100, backgroundColor: '#f5f5f5', borderRadius: 50, alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
-                  <Ionicons name="cart-outline" size={50} color="#ccc" />
-                </View>
-                <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>Кошик порожній</Text>
-                <Text style={{ color: '#888', textAlign: 'center', marginBottom: 30, width: '70%' }}>
-                  Ви ще нічого не додали. Загляньте в каталог, там багато цікавого!
-                </Text>
-                
-                <TouchableOpacity 
-                  onPress={() => setCartModalVisible(false)}
-                  style={{ backgroundColor: 'black', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 15 }}
-                >
-                  <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Перейти до каталогу</Text>
-                </TouchableOpacity>
-              </View>
-            }
-            renderItem={({ item }) => {
-              const renderCartItem = ({ item }: { item: Product }) => (
-                <View style={{ flexDirection: 'row', marginBottom: 20, backgroundColor: 'white', borderRadius: 15, padding: 10, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 }}>
-                  
-                  {/* Фото */}
-                  <TouchableOpacity
-                    onPress={() => {
-                      const product = (products || []).find(p => p.id === item.id);
-                      if (product) {
-                        setCartModalVisible(false);
-                        router.push(`/product/${product.id}`);
-                      }
-                    }}
-                  >
-                    <Image source={{ uri: getImageUrl(item.image) }} style={{ width: 70, height: 70, borderRadius: 10, backgroundColor: '#f5f5f5' }} />
-                  </TouchableOpacity>
-                  
-                  {/* Инфо */}
-                  <View style={{ flex: 1, marginLeft: 15 }}>
-                    <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: 'bold' }}>
-                      <Text>{item.name}</Text>
-                      <Text> ({(item as any).unit || (item as any).packSize || 'шт'})</Text>
-                    </Text>
-                    <Text style={{ fontSize: 15, fontWeight: '600', marginTop: 5 }}>{formatPrice(item.price * (item.quantity || 1))}</Text>
-                  </View>
-
-                  {/* Управление количеством */}
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', borderRadius: 8, padding: 2, marginBottom: 8 }}>
-                      <TouchableOpacity 
-                        onPress={() => {
-                          // Use variantSize if available, otherwise fall back to unit or packSize
-                          const itemUnit = (item as any).variantSize || (item as any).unit || (item as any).packSize || 'шт';
-                          removeOne(item.id, itemUnit);
-                        }}
-                        style={{ padding: 6 }}
-                      >
-                        <Ionicons name="remove" size={16} color="black" />
-                      </TouchableOpacity>
-                      
-                      <Text style={{ marginHorizontal: 8, fontWeight: 'bold', fontSize: 14 }}>{item.quantity || 1}</Text>
-                      
-                      <TouchableOpacity 
-                        onPress={() => {
-                          // Use variantSize if available, otherwise fall back to unit or packSize
-                          const itemUnit = (item as any).variantSize || (item as any).unit || (item as any).packSize || 'шт';
-                          addOne(item.id, itemUnit);
-                        }}
-                        style={{ padding: 6 }}
-                      >
-                        <Ionicons name="add" size={16} color="black" />
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Удалить */}
-                    <TouchableOpacity 
-                      onPress={() => {
-                        Vibration.vibrate(100);
-                        const itemPackSize = (item as any).packSize || (item as any).size || '30';
-                        const compositeId = `${item.id}-${String(itemPackSize)}`;
-                        removeItem(compositeId);
-                        if (cartItems.length <= 1) {
-                          setCartModalVisible(false);
-                        }
-                        showToast('Видалено з кошика');
-                      }}
-                      style={{ padding: 5 }}
-                    >
-                      <Ionicons name="trash-outline" size={18} color="#999" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              );
-              return renderCartItem({ item });
-            }}
-                contentContainerStyle={cart.length === 0 ? { padding: 20, flexGrow: 1 } : styles.cartModalListContent}
-                ItemSeparatorComponent={() => <View style={styles.cartModalSeparator} />}
-              />
-              {cart.length > 0 && (
-                <>
-                  <View style={styles.cartModalFooter}>
-                    {/* Промокод */}
-                    <View style={{ flexDirection: 'row', marginBottom: 20, marginTop: 10 }}>
-                      <TextInput
-                        placeholder="Промокод (напр. START)"
-                        value={promoCode}
-                        onChangeText={setPromoCode}
-                        autoCapitalize="characters"
-                        style={{ flex: 1, backgroundColor: '#f5f5f5', padding: 12, borderRadius: 10, marginRight: 10 }}
-                      />
-                      <TouchableOpacity 
-                        onPress={applyPromo}
-                        style={{ backgroundColor: 'black', justifyContent: 'center', paddingHorizontal: 20, borderRadius: 10 }}
-                      >
-                        <Text style={{ color: 'white', fontWeight: 'bold' }}>OK</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Отображение скидки (если есть) */}
-                    {discount > 0 && (
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-                        <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>Знижка 10%:</Text>
-                        <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>- {formatPrice(subtotal * discount)}</Text>
-                      </View>
-                    )}
-
-                    <Text style={styles.cartModalTotal}>
-                      <Text>Разом: </Text>
-                      <Text>{formatPrice(totalAmount)}</Text>
-                    </Text>
-                    <TouchableOpacity
-                      disabled={cartItems.length === 0}
-                      onPress={() => {
-                        if (cartItems.length === 0) {
-                          Alert.alert('Кошик порожній', 'Додайте товари до кошика');
-                          return;
-                        }
-                        setCartModalVisible(false);
-                        router.push('/checkout');
-                      }}
-                      style={{
-                        backgroundColor: cartItems.length > 0 ? 'black' : '#ccc', // Серый, если пусто
-                        paddingVertical: 15,
-                        borderRadius: 12,
-                        alignItems: 'center',
-                        marginTop: 20
-                      }}
-                    >
-                      <Text style={{ color: 'white', fontSize: 18, fontWeight: 'bold' }}>
-                        Оформити замовлення
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  </>
-              )}
-        </SafeAreaView>
-      </Modal>
       <Modal 
         animationType="slide" 
         visible={modalVisible && selectedProduct !== null}
@@ -1202,8 +979,7 @@ export default function Index() {
                       <Ionicons name="remove" size={20} color="black" />
                     </TouchableOpacity>
                     <Text style={{ fontSize: 16, fontWeight: 'bold', marginHorizontal: 10 }}>
-                      <Text>{quantity} </Text>
-                      <Text>{selectedProduct.unit || 'шт'}</Text>
+                      {quantity}
                     </Text>
                     <TouchableOpacity onPress={() => setQuantity(quantity + 1)} style={{ padding: 10 }}>
                       <Ionicons name="add" size={20} color="black" />
@@ -1287,10 +1063,14 @@ export default function Index() {
       <Modal animationType="slide" visible={favModalVisible}>
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Обране</Text>
-            <TouchableOpacity onPress={() => setFavModalVisible(false)}>
-              <Text style={styles.closeButton}>Закрити</Text>
+            <TouchableOpacity 
+              onPress={() => setFavModalVisible(false)}
+              style={styles.closeIconButton}
+            >
+              <Ionicons name="close" size={28} color="black" />
             </TouchableOpacity>
+            <Text style={styles.modalTitle}>Обране</Text>
+            <View style={{ width: 40 }} />
           </View>
           {favorites.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -1316,173 +1096,19 @@ export default function Index() {
                     <Text style={{ fontWeight: '600', color: '#555' }}>{formatPrice(item.price)}</Text>
           </View>
 
-                  <TouchableOpacity onPress={() => toggleFavorite(item)} style={{ padding: 10 }}>
-                    <Ionicons name="heart" size={24} color="red" />
+                  <TouchableOpacity 
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(item);
+                    }} 
+                    style={{ padding: 10 }}
+                  >
+                    <Ionicons name="trash-outline" size={24} color="#ff3b30" />
                   </TouchableOpacity>
                 </TouchableOpacity>
               )}
             />
           )}
-          <FloatingChatButton />
-        </SafeAreaView>
-      </Modal>
-      {/* PROFILE MODAL (Экран Профиля) */}
-      <Modal animationType="slide" visible={profileModalVisible} onRequestClose={() => setProfileModalVisible(false)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#f8f9fa' }}>
-          <View style={{ flex: 1, backgroundColor: '#f8f9fa' }}>
-            {/* Header Профиля */}
-            <View style={{ padding: 20, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: 24, fontWeight: 'bold' }}>Мої замовлення</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {orders.length > 0 && (
-                  <TouchableOpacity 
-                    onPress={() => {
-                      Alert.alert("Очистити історію?", "Всі замовлення будуть видалені. Цю дію неможливо скасувати.", [
-                        { text: "Скасувати", style: "cancel" },
-                        { 
-                          text: "Очистити", 
-                          style: "destructive", 
-                          onPress: () => {
-                            clearOrders();
-                            showToast('Історія замовлень очищена');
-                          }
-                        }
-                      ]);
-                    }}
-                    style={{ marginRight: 15, padding: 5 }}
-                  >
-                    <Ionicons name="trash-outline" size={24} color="#ff3b30" />
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity onPress={() => setProfileModalVisible(false)} style={{ padding: 5 }}>
-                  <Ionicons name="close" size={24} color="black" />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Список заказов */}
-            <FlatList
-              data={orders}
-              keyExtractor={item => String(item.id)}
-              contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
-              ListEmptyComponent={
-                <View style={{ alignItems: 'center', marginTop: 100 }}>
-                  <Ionicons name="receipt-outline" size={60} color="#ccc" />
-                  <Text style={{ marginTop: 20, color: '#888', fontSize: 16 }}>Історія замовлень порожня</Text>
-                </View>
-              }
-              renderItem={({ item }) => (
-                <View style={{ backgroundColor: 'white', borderRadius: 16, padding: 20, marginBottom: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 2 }}>
-                  
-                  {/* Верхняя часть: Номер, Дата, Статус */}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: 'bold', fontSize: 16 }}>
-                        <Text>Замовлення №</Text>
-                        <Text>{item.id}</Text>
-                      </Text>
-                      <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>{item.date}</Text>
-                      {item.name && (
-                        <Text style={{ color: '#666', fontSize: 13, marginTop: 4 }}>
-                          <Text>Клієнт: </Text>
-                          <Text>{item.name}</Text>
-                        </Text>
-                      )}
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <View style={{ backgroundColor: '#e8f5e9', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, alignSelf: 'flex-start', marginRight: 10 }}>
-                        <Text style={{ color: '#4CAF50', fontWeight: 'bold', fontSize: 12 }}>Нове</Text>
-                      </View>
-                      <TouchableOpacity 
-                        onPress={() => {
-                          Alert.alert("Видалити замовлення?", "Цю дію неможливо скасувати.", [
-                            { text: "Скасувати", style: "cancel" },
-                            { 
-                              text: "Видалити", 
-                              style: "destructive", 
-                              onPress: () => {
-                                removeOrder(item.id);
-                                showToast('Замовлення видалено');
-                              }
-                            }
-                          ]);
-                        }}
-                        style={{ padding: 5 }}
-                      >
-                        <Ionicons name="trash-outline" size={20} color="#ff3b30" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* Город */}
-                  {item.city && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#f9f9f9', padding: 10, borderRadius: 8 }}>
-                      <Ionicons name="location-outline" size={16} color="#666" />
-                      <Text style={{ marginLeft: 5, color: '#555', fontSize: 13, flex: 1 }}>
-                        <Text style={{ fontWeight: '600' }}>Місто: </Text>
-                        <Text>{item.city}</Text>
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Отделение почты */}
-                  {item.warehouse && (
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, backgroundColor: '#f9f9f9', padding: 10, borderRadius: 8 }}>
-                      <Ionicons name="cube-outline" size={16} color="#666" style={{ marginTop: 2 }} />
-                      <Text style={{ marginLeft: 5, color: '#555', fontSize: 13, flex: 1 }}>
-                        <Text style={{ fontWeight: '600' }}>Відділення: </Text>
-                        <Text>{item.warehouse}</Text>
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Телефон */}
-                  {item.phone && (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 15, backgroundColor: '#f9f9f9', padding: 10, borderRadius: 8 }}>
-                      <Ionicons name="call-outline" size={16} color="#666" />
-                      <Text style={{ marginLeft: 5, color: '#555', fontSize: 13, flex: 1 }}>
-                        <Text style={{ fontWeight: '600' }}>Телефон: </Text>
-                        <Text>{item.phone}</Text>
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Список товаров с названиями и вариантами */}
-                  <View style={{ marginBottom: 15 }}>
-                    {item.items.map((prod: OrderItem, index: number) => (
-                      <View key={index} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingBottom: 10, borderBottomWidth: index < item.items.length - 1 ? 1 : 0, borderBottomColor: '#f0f0f0' }}>
-                        <Image 
-                          source={{ uri: getImageUrl(prod.image) }} 
-                          style={{ width: 50, height: 50, borderRadius: 8, backgroundColor: '#f0f0f0', marginRight: 10 }} 
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 14, fontWeight: '500', color: '#333', marginBottom: 2 }}>
-                            {prod.name}
-                            {prod.variant_info && (
-                              <Text style={{ color: '#666', fontWeight: '400' }}> ({prod.variant_info})</Text>
-                            )}
-                          </Text>
-                          <Text style={{ fontSize: 12, color: '#888' }}>
-                            <Text>Кількість: </Text>
-                            <Text style={{ fontWeight: '600' }}>{prod.quantity || 1}</Text>
-                            <Text> • </Text>
-                            <Text style={{ fontWeight: '600' }}>{formatPrice((prod.price || 0) * (prod.quantity || 1))}</Text>
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-
-                  {/* Итого */}
-                  <View style={{ borderTopWidth: 1, borderTopColor: '#f0f0f0', paddingTop: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ color: '#666' }}>Разом до сплати:</Text>
-                    <Text style={{ fontSize: 18, fontWeight: 'bold' }}>{formatPrice(item.total)}</Text>
-                  </View>
-                  
-                </View>
-              )}
-            />
-          </View>
           <FloatingChatButton />
         </SafeAreaView>
       </Modal>
@@ -1504,7 +1130,7 @@ export default function Index() {
               onPress={() => {
                 setSuccessVisible(false);
                 setTimeout(() => {
-                  setProfileModalVisible(true);
+                  router.push('/(tabs)/profile');
                 }, 300);
               }}
               style={{ backgroundColor: 'black', paddingVertical: 15, paddingHorizontal: 40, borderRadius: 15, width: '100%' }}
@@ -1837,108 +1463,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '600',
   },
-  cartModalContainer: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  cartModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  cartModalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  cartModalCloseButton: {
-    color: 'red',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cartEmptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cartEmptyText: {
-    fontSize: 18,
-    color: '#666',
-    fontWeight: '600',
-  },
-  cartModalListContent: {
-    padding: 20,
-  },
-  cartModalItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-  },
-  cartModalItemImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 10,
-    marginRight: 15,
-    resizeMode: 'cover',
-  },
-  cartModalItemInfo: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  cartModalItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-    color: '#333',
-  },
-  cartModalItemSize: {
-    fontSize: 14,
-    color: '#666',
-  },
-  cartModalItemRight: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-  },
-  cartModalItemPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 8,
-  },
-  cartModalDeleteButton: {
-    padding: 5,
-  },
-  cartModalSeparator: {
-    height: 1,
-    backgroundColor: '#f0f0f0',
-    marginVertical: 5,
-  },
-  cartModalFooter: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    backgroundColor: '#fff',
-  },
-  cartModalTotal: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 15,
-    color: '#000',
-  },
-  cartModalPayButton: {
-    backgroundColor: '#000',
-    padding: 18,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  cartModalPayButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
   categoriesList: { 
     paddingHorizontal: 20, 
     paddingBottom: 20,
@@ -2099,8 +1623,9 @@ const styles = StyleSheet.create({
   cartPanel: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "green", padding: 15, alignItems: "center" },
   cartText: { color: "white", fontSize: 16, fontWeight: "600" },
   modalContainer: { flex: 1, backgroundColor: "#fff" },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: "#e0e0e0" },
-  modalTitle: { fontSize: 24, fontWeight: "bold" },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: "#e0e0e0", position: "relative" },
+  closeIconButton: { width: 40, alignItems: "flex-start", justifyContent: "center", padding: 5, zIndex: 1 },
+  modalTitle: { fontSize: 24, fontWeight: "bold", position: "absolute", left: 0, right: 0, textAlign: "center" },
   closeButton: { color: "red", fontSize: 16, fontWeight: "600" },
   cartListContent: { padding: 20 },
   cartItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "#f0f0f0" },

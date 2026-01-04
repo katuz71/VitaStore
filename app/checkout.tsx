@@ -20,6 +20,7 @@ import { API_URL } from './config/api';
 import { useCart } from './context/CartContext';
 import { OrderItem, useOrders } from './context/OrdersContext';
 import { FloatingChatButton } from '@/components/FloatingChatButton';
+import { loadCustomerData, saveCustomerData, CustomerData } from './utils/customerData';
 
 interface City {
   Ref: string;
@@ -74,6 +75,26 @@ export default function CheckoutScreen() {
     // Иначе ищем и по названию, и по номеру
     return description.includes(searchLower) || number.includes(searchLower);
   });
+
+  // Загрузка сохраненных данных клиента при открытии экрана
+  useEffect(() => {
+    const loadSavedData = async () => {
+      const savedData = await loadCustomerData();
+      if (savedData) {
+        setName(savedData.name || '');
+        setPhone(savedData.phone || '+380');
+        if (savedData.city && savedData.cityRef) {
+          setCitySearch(savedData.city);
+          setSelectedCity({ Ref: savedData.cityRef, Description: savedData.city });
+        }
+        if (savedData.warehouse && savedData.warehouseRef) {
+          setWarehouseSearch(savedData.warehouse);
+          setSelectedWarehouse({ Ref: savedData.warehouseRef, Description: savedData.warehouse });
+        }
+      }
+    };
+    loadSavedData();
+  }, []);
 
   // Загрузка городов при вводе (минимум 2 символа)
   useEffect(() => {
@@ -517,15 +538,56 @@ export default function CheckoutScreen() {
           // Добавляем заказ в историю
           addOrder(newOrder);
           
-          // Устанавливаем состояние ожидания оплаты
-          setIsPending(true);
-          setCurrentOrderId(orderId);
-          
-          // Открываем URL оплаты
-          await Linking.openURL(data.payment_url);
-          
-          // НЕ показываем Alert, просто возвращаемся
-          setSubmitting(false);
+          // Предлагаем сохранить данные клиента
+          Alert.alert(
+            'Зберегти дані?',
+            'Бажаєте зберегти дані для наступних замовлень?',
+            [
+              {
+                text: 'Ні',
+                style: 'cancel',
+                onPress: async () => {
+                  // Устанавливаем состояние ожидания оплаты
+                  setIsPending(true);
+                  setCurrentOrderId(orderId);
+                  
+                  // Открываем URL оплаты
+                  await Linking.openURL(data.payment_url);
+                  
+                  // НЕ показываем Alert, просто возвращаемся
+                  setSubmitting(false);
+                }
+              },
+              {
+                text: 'Так',
+                onPress: async () => {
+                  try {
+                    const customerData: CustomerData = {
+                      name: name,
+                      phone: phone,
+                      city: selectedCity.Description,
+                      cityRef: selectedCity.Ref,
+                      warehouse: selectedWarehouse.Description,
+                      warehouseRef: selectedWarehouse.Ref,
+                    };
+                    await saveCustomerData(customerData);
+                  } catch (error) {
+                    console.error('Error saving customer data:', error);
+                  }
+                  
+                  // Устанавливаем состояние ожидания оплаты
+                  setIsPending(true);
+                  setCurrentOrderId(orderId);
+                  
+                  // Открываем URL оплаты
+                  await Linking.openURL(data.payment_url);
+                  
+                  // НЕ показываем Alert, просто возвращаемся
+                  setSubmitting(false);
+                }
+              }
+            ]
+          );
           return;
         } catch (error) {
           console.error('Error opening payment URL:', error);
@@ -565,15 +627,51 @@ export default function CheckoutScreen() {
         // Добавляем заказ в историю
         addOrder(newOrder);
         
-        // Очищаем корзину
-        clearCart();
-        
-        // Показываем красивое модальное окно успеха с кнопкой "Чудово"
-        setSubmitting(false);
-        // Небольшая задержка для плавного показа модального окна
-        setTimeout(() => {
-          setSuccessVisible(true);
-        }, 100);
+        // Предлагаем сохранить данные клиента
+        Alert.alert(
+          'Зберегти дані?',
+          'Бажаєте зберегти дані для наступних замовлень?',
+          [
+            {
+              text: 'Ні',
+              style: 'cancel',
+              onPress: () => {
+                // Очищаем корзину
+                clearCart();
+                // Показываем красивое модальное окно успеха
+                setSubmitting(false);
+                setTimeout(() => {
+                  setSuccessVisible(true);
+                }, 100);
+              }
+            },
+            {
+              text: 'Так',
+              onPress: async () => {
+                try {
+                  const customerData: CustomerData = {
+                    name: name,
+                    phone: phone,
+                    city: selectedCity.Description,
+                    cityRef: selectedCity.Ref,
+                    warehouse: selectedWarehouse.Description,
+                    warehouseRef: selectedWarehouse.Ref,
+                  };
+                  await saveCustomerData(customerData);
+                } catch (error) {
+                  console.error('Error saving customer data:', error);
+                }
+                // Очищаем корзину
+                clearCart();
+                // Показываем красивое модальное окно успеха
+                setSubmitting(false);
+                setTimeout(() => {
+                  setSuccessVisible(true);
+                }, 100);
+              }
+            }
+          ]
+        );
         return;
       }
 

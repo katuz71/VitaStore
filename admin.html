@@ -844,14 +844,15 @@
             
             // Build payload object with all fields
             const variants = getVariants();
+            const usageValue = document.getElementById('product-usage').value.trim();
             const payload = {
                 name: document.getElementById('product-name').value,
                 price: parseFloat(document.getElementById('product-price').value),
                 category: document.getElementById('productCategory').value || null,
                 image: document.getElementById('product-image').value || '',
-                description: document.getElementById('product-description').value || null,
-                composition: document.getElementById('product-composition').value || null,
-                usage: document.getElementById('product-usage').value || null,
+                description: document.getElementById('product-description').value.trim() || null,
+                composition: document.getElementById('product-composition').value.trim() || null,
+                usage: usageValue || null,
                 old_price: document.getElementById('product-old-price').value ? parseFloat(document.getElementById('product-old-price').value) : null,
                 unit: document.getElementById('product-unit').value || "шт",
                 pack_sizes: [], // Keep for compatibility but empty

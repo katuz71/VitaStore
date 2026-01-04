@@ -138,7 +138,7 @@ export default function ProductScreen() {
         {/* 1. Фото товара + Кнопки управления (Overlay) */}
         <View>
           <Image 
-            source={{ uri: getImageUrl(product.image, {
+            source={{ uri: getImageUrl(product.picture || product.image || product.image_url, {
               width: Dimensions.get('window').width,
               height: 350,
               quality: 90,
@@ -373,7 +373,7 @@ export default function ProductScreen() {
                       }}
                     >
                       <Image 
-                        source={{ uri: getImageUrl(item.image || item.image_url || item.picture) }} 
+                        source={{ uri: getImageUrl(item.picture || item.image || item.image_url) }} 
                         style={{ 
                           width: '100%', 
                           height: 140, 

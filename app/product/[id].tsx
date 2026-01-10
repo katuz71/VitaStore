@@ -593,7 +593,7 @@ export default function ProductScreen() {
           </View>
         </Animated.View>
       )}
-      <FloatingChatButton />
+      <FloatingChatButton bottomOffset={180} />
     </SafeAreaView>
   );
 }

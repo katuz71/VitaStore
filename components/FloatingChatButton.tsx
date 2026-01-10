@@ -1,14 +1,18 @@
-import React from 'react';
-import { TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import React from 'react';
+import { StyleSheet, TouchableOpacity } from 'react-native';
 
-export function FloatingChatButton() {
+interface FloatingChatButtonProps {
+  bottomOffset?: number;
+}
+
+export function FloatingChatButton({ bottomOffset = 110 }: FloatingChatButtonProps) {
   const router = useRouter();
 
   return (
     <TouchableOpacity
-      style={styles.floatingButton}
+      style={[styles.floatingButton, { bottom: bottomOffset }]}
       onPress={() => router.push('/(tabs)/chat')}
       activeOpacity={0.8}
     >
@@ -20,7 +24,6 @@ export function FloatingChatButton() {
 const styles = StyleSheet.create({
   floatingButton: {
     position: 'absolute',
-    bottom: 30,
     right: 20,
     width: 60,
     height: 60,
@@ -32,8 +35,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 5,
-    elevation: 8,
-    zIndex: 999,
+    elevation: 10,
+    zIndex: 9999,
   },
 });
 

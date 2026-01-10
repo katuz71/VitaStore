@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Image, StyleSheet, SafeAreaView, TextInput, Alert, Vibration } from 'react-native';
+import { FloatingChatButton } from '@/components/FloatingChatButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Alert, FlatList, Image, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, Vibration, View } from 'react-native';
+import { logBeginCheckout } from '../../src/utils/analytics';
 import { useCart } from '../context/CartContext';
 import { getImageUrl } from '../utils/image';
-import { FloatingChatButton } from '@/components/FloatingChatButton';
-import { logBeginCheckout } from '../../src/utils/analytics';
 
 export default function CartScreen() {
   const router = useRouter();
@@ -207,7 +207,7 @@ export default function CartScreen() {
         </View>
       )}
 
-      <FloatingChatButton />
+      <FloatingChatButton bottomOffset={30} />
     </SafeAreaView>
   );
 }

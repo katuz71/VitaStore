@@ -4,18 +4,18 @@ import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { logPurchase } from '../src/utils/analytics';
 import { API_URL } from './config/api';
@@ -1068,7 +1068,7 @@ export default function CheckoutScreen() {
         </View>
       </Modal>
     </KeyboardAvoidingView>
-    <FloatingChatButton />
+    <FloatingChatButton bottomOffset={200} />
     </SafeAreaView>
   );
 }
@@ -1286,7 +1286,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20, // Safe area для iOS
+    paddingBottom: Platform.OS === 'ios' ? 100 : 80, // Safe area для iOS + дополнительный отступ
     backgroundColor: '#fff',
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',

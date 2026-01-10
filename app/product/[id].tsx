@@ -1,13 +1,13 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { View, Text, Image, TouchableOpacity, ScrollView, ActivityIndicator, SafeAreaView, Animated, Vibration, Dimensions, Share } from 'react-native';
+import { FloatingChatButton } from '@/components/FloatingChatButton';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Dimensions, Image, SafeAreaView, ScrollView, Share, Text, TouchableOpacity, Vibration, View } from 'react-native';
+import { logAddToCart, logViewItem } from '../../src/utils/analytics';
 import { useCart } from '../context/CartContext';
 import { useOrders } from '../context/OrdersContext';
+import { isFavorite as isFavoriteUtil, toggleFavorite as toggleFavoriteUtil } from '../utils/favorites';
 import { getImageUrl } from '../utils/image';
-import { Ionicons } from '@expo/vector-icons';
-import { FloatingChatButton } from '@/components/FloatingChatButton';
-import { loadFavorites, toggleFavorite as toggleFavoriteUtil, isFavorite as isFavoriteUtil } from '../utils/favorites';
-import { logViewItem, logAddToCart } from '../../src/utils/analytics';
 
 export default function ProductScreen() {
   const { id } = useLocalSearchParams();
@@ -334,7 +334,8 @@ export default function ProductScreen() {
                     const productForAnalytics = {
                       ...product,
                       price: activeVariant ? activeVariant.price : currentPrice,
-                      title: product.name
+                      title: product.name,
+                      quantity: quantity
                     };
                     logAddToCart(productForAnalytics).catch((error) => {
                       console.error('Error logging add to cart:', error);
